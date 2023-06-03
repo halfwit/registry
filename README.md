@@ -2,7 +2,6 @@
 Inferno's registry, done in a more plan9-like manner
 
 ```
-# Copy into /sys/src/cmd/ndb 
 mk all && mk install
 ```
 
