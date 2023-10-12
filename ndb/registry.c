@@ -55,7 +55,6 @@ struct {
 
 Svc	*registry;
 int	vers;
-int	resolver;
 int	debug;
 char	*dbfile = "/lib/ndb/registry";
 char	*reguser;
@@ -113,9 +112,6 @@ main(int argc, char* argv[])
 	setnetmtpt(mtpt, sizeof mtpt, nil);
 
 	ARGBEGIN{
-	case 'r':
-		resolver = 1;
-		break;
 	case 'd':
 		debug = 1;
 		break;
@@ -141,7 +137,7 @@ main(int argc, char* argv[])
 
 	reglog("starting registry on %s", mtpt);
 
-	if(! resolver && openregistry())
+	if(openregistry())
 		sysfatal("unable to open db file");
 
 	reguser = estrdup(getuser());
@@ -152,13 +148,8 @@ main(int argc, char* argv[])
 		sysfatal("%s exists; another registry instance is running", servefile);
 	free(dir);
 
-
 	mountinit(servefile, mtpt);
-
-	if(resolver)
-		regconnect();
-	else
-		reg2cache();
+	reg2cache();
 	io();
 
 	_exits(0);
@@ -663,10 +654,6 @@ query:
 		goto send;
 	}
 
-	if(resolver){
-		resolvequery(job, mf, job->request.data, pipe2rc);
-		goto send;
-	}
 	err = query(job, mf,job->request.data, pipe2rc);
 send:
 	mf->bare = 0;
@@ -801,11 +788,6 @@ regdump(char *file)
 	Svc *rp;
 	int fd;
 
-	if(resolver){
-		resolve("dump");
-		return;
-	}
-
 	fd = create(file, OWRITE, 0666);
 	if(fd < 0)
 		return;
@@ -821,11 +803,6 @@ refresh(void)
 {	
 	Svc *c;
 	char dial[Maxdial];
-
-	if(resolver){
-		resolve("refresh");
-		return;
-	}
 
 	for(c = registry; c; c = c->next){
 		/* Don't remove the ones we've added since startup */
@@ -868,8 +845,7 @@ addsvc(char *args)
 {
 	if(debug)
 		reglog("Adding entry: %s", args);
-	if(resolver)
-		return resolve("add", args);
+
 	return rstr2cache(args, 0);
 }
 
@@ -878,8 +854,6 @@ rmsvc(char *args)
 {
 	if(debug)
 		reglog("Removing entry: %s", args);
-	if(resolver)
-		return resolve("rm", args);
 	return rstrdtch(args);
 }
 
@@ -888,8 +862,6 @@ updatesvc(char *args)
 {
 	if(debug)
 		reglog("Updating entry: %s", args);
-	if(resolver)
-		return resolve("update", args);
 	return rstrupdt(args);
 }
 

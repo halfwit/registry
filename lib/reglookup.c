@@ -60,7 +60,7 @@ host2svc(Svc *svc, char *dial)
 	/* 
 	 * entry host=tcp!mything!9fs
 	 * for now, tokenize but we should allow short strings
-         */
+     */
 	n = strcspn(dial, "!");
 	if(n < 1)
 		strcpy(svc->trns, "tcp");
@@ -190,44 +190,6 @@ rstrupdt(char *entry)
 			strecpy(svc->mtpt, svc->mtpt+Maxpath, args[++i]);
 
 	return 0;
-}
-
-void
-regconnect(void)
-{
-	Ndb *adb;
-	Ndbtuple *t;
-	char *host, *list[1];
-	int rfdn, fd;
-
-	rfdn = 0;
-	adb = ndbopen(0);
-
-	/* Start with us */
-	host = getenv("sysname");
-	list[0] = "registry";
-	t = ndbipinfo(adb, "sys", host, list, 1);
-	if(t->val != nil){
-		fd = dial(t->val, 0, 0, 0);
-		if(fd >= 0)
-			rfd[rfdn++] = fd;
-	}
-	ndbfree(t);
-
-	/* Here we want to find our other registry= tuples in the ndb
-         * I don't claim to know the best way to do this. registry= entries 
-	 * in an ipnet= is the solution i see best fitting, but for now 
-         * this will be marked as TODO and left alone 
-	 * the goal will be, however, to iterate through upstream resolvers
-         * which act as lists for services one may add, like the 9ants grid
-         * registry, as a good example; and when a local resolve misses, it
-         * bubbles up to the next resolver, etc, until we exhaust the list 
-         * or find a match
-         */
-
-	if(rfdn < 1)
-		sysfatal("unable to dial any registry server");
-	rfd[rfdn] = 0;
 }
 
 void
