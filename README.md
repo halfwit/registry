@@ -101,4 +101,4 @@ Like regquery, but issues queries directly to the given svcfs
 ## Future
 - The code!
 - Libraries for services to publish services
-- 
+- Integration into `cpurc`
