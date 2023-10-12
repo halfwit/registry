@@ -1,5 +1,3 @@
-// svcfs
-
 #include <u.h>
 #include <libc.h>
 #include <fcall.h>
@@ -7,10 +5,7 @@
 // fs
 //  - addr, description, status, etc in dir from backing. 
 //  - uptime from keepalive thread
-// keepalive
 //  Every run, we check and set status + uptime
-// Creates: /mnt/services
-// Parses: /adm/keys
 // Auth? We mostly don't care about auth outside of creates, but this should be considered eventually
 
 typedef struct Fid Fid;
@@ -148,9 +143,8 @@ main(int argc, char *argv[])
 		svcfile = argv[0];
 
 	if(pipe(p) < 0)
-		error("Can't make pipe: %r);
+		error("Can't make pipe: %r");
 
-	// TODO: Auth?
 	readservices();
 
 	switch(rfork(RFPROC|RFNAMEG|RFNOTEG|RFNOWAIT|RFENVG|RFFDG)){
@@ -251,12 +245,11 @@ Walk(Fid *f)
 				if(svc == nil)
 					goto Out;
 				qtype = Qsvc;
-
 			Accept:
 				thdr.wqid[i] = mkqid(svc, qtype);
 				break;
 			case Qsvc:
-				if(strcmp(name, "..") == 0)
+				if(strcmp(name, "..") == 0) {
 					qtype = Qroot;
 					svc = nil;
 					goto Accept;
@@ -267,7 +260,6 @@ Walk(Fid *f)
 						type = j;
 						break;
 					}
-				}
 				if(j < max)
 					goto Accept;
 				goto Out;
@@ -438,7 +430,7 @@ Read(Fid *f)
 	}	
 }
 
-char (
+char *
 Write(Fid *f)
 {
 	char *data, *p;
@@ -582,6 +574,7 @@ writeservices(void)
 {
 	int fd, ns, i;
 	Service *svc;
+	uchar *buf;
 
 	if(readonly){
 		fprint(2, "attempted to write services to disk in a readonly system\n");
@@ -589,6 +582,11 @@ writeservices(void)
 	}
 	
 	/* Count our services */
+	for(i = 0; i < Nsvcs; i++){
+		for(svc = svcs[i]; svc != nil; svc = svc->link)
+			ns++;
+	}
+
 	
 }
 
