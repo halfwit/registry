@@ -15,7 +15,7 @@ ipnet=mynetwork ip=192.168.1.0 ipmask=255.255.255.0
     cpu=crunchy
 ```
 
-This is used by ndb/registry to find your network regfs
+This is used by ndb/registry to find your network svcfs
 
 Add the following to your /cfg/$sysname/cpurc, where $sysname matches what you entered above.
 
