@@ -50,6 +50,8 @@ Usage: `ndb/registry [-r] [-s srvname]`
 Registry connects to a `svcfs`, by default checking for an entry in your local ipnet=. 
 It parses `/cfg/$sysname/registry`, an ndb-formatted list of local services. 
 
+* Note: It is possible to run registry without a svcfs
+
 ```
 ## /cfg/mysystem/registry
 
