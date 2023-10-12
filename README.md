@@ -32,9 +32,9 @@ Below are the main parts. Basic setup only requires an ndb/registry instance and
 
 Usage: `aux/svcfs [-r] [-m mtpt] servicesfile`
 
-svcfs will periodically check a service is still alive with a gradual backoff, capping off at hourly.
-svcfs manages the contents of a file, /adm/services, which it will read in on startup
-It serves up on /mnt/services, making a new directory creates a new service,
+`svcfs` will periodically check a service is still alive with a gradual backoff, capping off at hourly.
+`svcfs` manages the contents of a file, `/adm/services`, which it will read in on startup
+It serves up on `/mnt/services`, making a new directory creates a new service,
 The dir contains many of the following files: 
  - addr
  - status (ok/down)
@@ -42,7 +42,7 @@ The dir contains many of the following files:
  - description
  - fd0/fd1 (?)
 
-Services may be read by anyone, but can only be modified by the owner. Request must come from users in the same authdom.
+Services may be read by anyone, but can only be modified by the creator or registry owner. Request must come from users in the same authdom.
 
 ### ndb/registry 
 
@@ -52,8 +52,6 @@ Usage: `ndb/registry [-r] [-s srvname]`
 
 Registry connects to a `svcfs`, by default checking for an entry in your local ipnet=. 
 It parses `/cfg/$sysname/registry`, an ndb-formatted list of local services. 
-
-* Note: It is possible to run registry without a svcfs
 
 ```
 ## /cfg/mysystem/registry
