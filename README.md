@@ -89,7 +89,7 @@ Usage: `nbd/regquery [-m mtpt] [-a] [query]`
 
 Connects to `mtpt`, by default at `/mnt/registry` and issues a search for the given query. If no value is passed in, all entries will be returned.
 
-- `-a` only returns services with a status of `ok`, and/or local address services.
+- `-a` returns all services that match query, regardless of whether they are live or not
 
 Searches are for partial matches, searching for `"speaker"` will return `"outside-speaker-front"` and `"living-room-speaker"`, for example.
 
