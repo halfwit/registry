@@ -24,8 +24,11 @@ Add the following to your /cfg/$sysname/cpurc, where $sysname matches what you e
 aux/svcfs -m /mnt/services /adm/services
 aux/listen1 -t tcp!*!registry /bin/exportfs -r /mnt/services
 ```
+## Pieces
 
-## aux/svcfs
+Below are the main parts. Basic setup only requires an ndb/registry instance and ndb/regquery
+
+### aux/svcfs
 
 Usage: `aux/svcfs [-r] [-m mtpt] servicesfile`
 
@@ -41,7 +44,7 @@ The dir contains many of the following files:
 
 Services may be read by anyone, but can only be modified by the owner. Request must come from users in the same authdom.
 
-## ndb/registry 
+### ndb/registry 
 
 Usage: `ndb/registry [-r] [-s srvname]`
 - `-r` do not parse /cfg/$sysname/registry
@@ -83,7 +86,7 @@ service=plumber
 
 The point of which is more for bookkeeping, populating menus in an automated way, etc
 
-## ndb/regquery 
+### ndb/regquery 
 Usage: `nbd/regquery [-m mtpt] [-a] [query]`
 
 Connects to `mtpt`, by default at `/mnt/registry` and issues a search for the given query. If no value is passed in, all entries will be returned.
@@ -92,5 +95,10 @@ Connects to `mtpt`, by default at `/mnt/registry` and issues a search for the gi
 
 Searches are for partial matches, searching for `"speaker"` will return `"outside-speaker-front"` and `"living-room-speaker"`, for example.
 
-## ndb/regdebug
+### ndb/regdebug
 Like regquery, but issues queries directly to the given svcfs
+
+## Future
+- The code!
+- Libraries for services to publish services
+- 
