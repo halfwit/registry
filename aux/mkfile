@@ -1,0 +1,10 @@
+# svcfs
+</$objtype/mkfile
+
+TARG = svcfs
+OFILES =\
+	svcfs.$O
+
+BIN=/$objtype/bin/aux
+
+<//sys/src/cmd/mkone
