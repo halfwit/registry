@@ -24,11 +24,13 @@ enum {
 	Nsvcs = 512,
 	MAXDESC = 256,
 	MAXADDR = 128,
+	RS = 0x1e,
 };
 
 enum {
 	Sok,
 	Sdown,
+	Sreg,
 	Smax,
 };
 
@@ -65,6 +67,7 @@ char *qinfo[Qmax] = {
 char *status[Smax] = {
 	[Sok] 	= "ok",
 	[Sdown]	= "down",
+	[Sreg] = "registered",
 };
 
 Fid *fids;
@@ -304,6 +307,8 @@ Clunk(Fid *f)
 	f->busy = 0;
 	if(f->svc != nil && --f->svc->ref == 0 && f->svc->removed) {
 		free(f->svc->name);
+		free(f->svc->description);
+		free(f->svc->addr);
 		free(f->svc);
 	}
 	f->svc = nil;
@@ -448,6 +453,8 @@ Write(Fid *f)
 	case Qaddr:
 		if(n > Namelen)
 			return "address too big!";
+		if(data[n-1] = '\n')
+			n--;
 		memmove(f->svc->addr, data, n);
 		f->svc->addr[n] = '\0';
 		thdr.count = n;
@@ -455,6 +462,8 @@ Write(Fid *f)
 	case Qdesc:
 		if(n > Namelen)
 			return "description too long";
+		if(data[n-1] = '\n')
+			n--;
 		memmove(f->svc->description, data, n);
 		f->svc->description[n] = '\0';
 		thdr.count = n;
@@ -591,7 +600,7 @@ writeservices(void)
 
 	/* Make a buffer large enough to hold each line */
 	buf = emalloc(ns * entrylen);
-	memset(buf, '·', entrylen);
+	memset(buf, RS, entrylen);
 	p = buf;
 	for(i = 0; i < Nsvcs; i++)
 		for(svc = services[i]; svc !=nil; svc = svc->link){
@@ -625,7 +634,7 @@ svcok(char *svc, int nu)
 	memmove(buf, svc, Namelen);
 
 	if(buf[Namelen-1] != 0){
-		fprint(2, "keyfs: %d: no termination: %W\n", nu, buf);
+		fprint(2, "svcfs: %d: no termination\n", nu);
 		return -1;
 	}
 
@@ -634,18 +643,19 @@ svcok(char *svc, int nu)
 		n = chartorune(&r, buf+i);
 		if(r == Runeerror){
 			rv = -1;
-		} else if(isascii(r) && iscntrl(r) || r == ' ' || r == '/'){
-			rv = -1;
-		} else if(r == '·') /* Scrub our spacer out */
+		} else if(r == RS) { /* Scrub our spacer out */
 			buf[i] = 0;
+		} else if(isascii(r) && iscntrl(r) || r == ' ' || r == '/')
+			rv = -1;
+
 	}
 
 	if(i == 0){
-		fprint(2, "keyfs: %d: nil name\n", nu);
+		fprint(2, "svcfs: %d: nil name\n", nu);
 		return -1;
 	}
 	if(rv == -1)
-		fprint(2, "keyfs: %d: bad syntax: %W\n", nu, buf);
+		fprint(2, "svcfs: %d: bad syntax\n", nu);
 	return rv;
 }
 
@@ -654,21 +664,21 @@ scrub(uchar *ep, int len)
 {
 	int i, n;
 	Rune r;
-	char buf[len+1];
+	char *buf;
 
+	buf = emalloc(len);
 	memset(buf, 0, sizeof buf);
 	memmove(buf, ep, len);
 
 	for(i = 0; buf[i]; i += n){
 		n = chartorune(&r, buf+i);
-		if(r == Runeerror){
-			return 'error';
-		}
-		if(r == '·')
+		if(r == Runeerror)
+			return "error";
+		if(r == RS)
 			buf[i] = 0;
 	}
 	if(i == 0){
-		return "No description provided";
+		return "empty";
 	}
 	return buf;
 }
@@ -678,7 +688,6 @@ readservices(void)
 {
 	int fd, i, n, ns, entrylen;
 	uchar *buf, *ep;
-	char *name;
 	Service *svc;
 	Dir *d;
 
@@ -702,7 +711,6 @@ readservices(void)
 		return 0;
 	}
 	ep = buf;
-	free(buf);
 	entrylen = Namelen + MAXDESC + MAXADDR;
 	n = n / entrylen;
 	ns = 0;
@@ -710,8 +718,8 @@ readservices(void)
 		svc = findsvc((char *)ep);
 		if(svc == nil)
 			svc = installsvc((char *)ep);
-		svc->description = scrub(ep + Namelen, MAXDESC);
-		svc->addr = scrub(ep + Namelen + MAXDESC, MAXADDR);
+		svc->addr = scrub(ep + Namelen, MAXADDR);
+		svc->description = scrub(ep + Namelen + MAXADDR, MAXDESC);
 		ns++;
 	}
 	free(buf);
@@ -729,11 +737,11 @@ installsvc(char *name)
 	h = hash(name);
 	svc = emalloc(sizeof *svc);
 	svc->name = estrdup(name);
-	svc->description = estrdup("none");
+	svc->description = estrdup("No description provided");
 	svc->addr = estrdup("none");
 	svc->removed = 0;
 	svc->ref = 0;
-	svc->status = Sok;
+	svc->status = Sreg;
 	svc->uniq = uniq++;
 	svc->link = services[h];
 	services[h] = svc;
