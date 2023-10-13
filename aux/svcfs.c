@@ -48,7 +48,7 @@ struct Service {
 	char	*addr;
 	char	removed;
 	int	ref;
-	ulong	uptime;
+	vlong	uptime;
 	ulong	uniq;
 	uchar	persist;
 	uchar	status;
@@ -87,6 +87,7 @@ int		readservices(void);
 void		writeservices(void);
 void	error(char*);
 int		dostat(Service*, ulong, void*, int);
+void	watch(void);
 void	io(int, int);
 Qid		mkqid(Service*, ulong);
 ulong	hash(char*);
@@ -127,7 +128,7 @@ void
 main(int argc, char *argv[])
 {
 	char *mntpt;
-	int p[2];
+	int p[2], pid;
 
 	mntpt = "/mnt/services";
 	ARGBEGIN{
@@ -153,11 +154,17 @@ main(int argc, char *argv[])
 		error("Can't make pipe: %r");
 
 	readservices();
+	if((pid = rfork(RFPROC|RFMEM)) == 0) {
+		watch();
+		exits(0);
+	}
 
-	switch(rfork(RFPROC|RFNAMEG|RFNOTEG|RFNOWAIT|RFENVG|RFFDG)){
+	switch(rfork(RFPROC|RFNAMEG|RFNOTEG|RFNOWAIT|RFENVG|RFFDG|RFMEM)){
 	case 0:
 		close(p[0]);
 		io(p[1], p[1]);
+		postnote(PNPROC, 1, "shutdown");
+		postnote(PNPROC, pid, "shutdown");
 		exits(0);
 	case -1:
 		error("fork");
@@ -427,7 +434,7 @@ Read(Fid *f)
 		sprint(data, "%s\n", f->svc->addr);
 		goto Readstr;
 	case Quptime:
-		sprint(data, "%lud\n", f->svc->uptime);
+		sprint(data, "%lld\n", f->svc->uptime);
 		goto Readstr;
 	case Qdesc:
 		sprint(data, "%s\n", f->svc->description);
@@ -647,7 +654,6 @@ svcok(char *svc, int nu)
 			buf[i] = 0;
 		} else if(isascii(r) && iscntrl(r) || r == ' ' || r == '/')
 			rv = -1;
-
 	}
 
 	if(i == 0){
@@ -827,7 +833,8 @@ findfid(int fid)
 	return f;
 }
 
-void io(int in, int out)
+void
+io(int in, int out)
 {
 	char *err;
 	int n;
@@ -852,6 +859,62 @@ void io(int in, int out)
 		n = convS2M(&thdr, mdata, messagesize);
 		if(write(out, mdata, n) != n)
 			error("mount write");
+	}
+}
+
+int
+alive(Service *svc)
+{
+	int fd;
+
+	if(strncmp(svc->addr, "none", 4) == 0)
+		return 2;
+	fd = dial(svc->addr, nil, nil, nil);
+	if(fd < 0){
+		if(svc->status == Sreg)
+			return 2;
+		return -1;
+	}
+	close(fd);
+	if(svc->status == Sok)
+		return 1;
+	return 0;
+}
+
+void
+watch(void)
+{
+	/* Status, uptime */
+	Service *svc;
+	int i;
+	int seconds;
+	vlong start;
+
+	seconds = 30;
+	for(;;) {
+		start = nsec();
+		for(i = 0; i < seconds; i++)
+			sleep(1000);
+		for(i = 0; i < Nsvcs; i++)
+			for(svc = services[i]; svc !=nil; svc = svc->link)
+				switch(alive(svc)){
+				case -1: 
+					/* Offline */
+					svc->status = Sdown;
+					break;
+				case 0:
+					/* Coming online */
+					svc->status = Sok;
+					svc->uptime = 0;
+					break;
+				case 1:
+					svc->status = Sok;
+					svc->uptime += ((nsec() - start) / 1000000000LL);
+					break;
+				default:
+					/* Still in setup */
+					break;
+				}
 	}
 }
 
@@ -886,3 +949,4 @@ error(char *s)
 	fprint(2, "svcfs: %s\n", s);
 	exits(s);
 }
+
