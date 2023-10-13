@@ -5,8 +5,7 @@
 // fs
 //  - addr, description, status, etc in dir from backing. 
 //  - uptime from keepalive thread
-//  Every run, we check and set status + uptime
-// Auth? We mostly don't care about auth outside of creates, but this should be considered eventually
+// Every run, we check and set status + uptime
 
 typedef struct Fid Fid;
 typedef struct Service Service;
@@ -18,9 +17,11 @@ enum {
 	Qstatus,
 	Quptime,
 	Qdesc,
-	Qlog,
 
+	Namelen = 28,
 	Nsvcs = 512,
+	MAXDESC = 256,
+	MAXADDR = 128,
 };
 
 enum {
@@ -57,33 +58,32 @@ char *qinfo[Qmax] = {
 	[Qstatus]	"status",
 	[Quptime]	"uptime",
 	[Qdesc]		"description",
-	[Qlog]		"log",
 };
 
 char *status[Smax] = {
 	[Sok] 	= "ok",
-	[Sdown]	= "offline",
+	[Sdown]	= "down",
 };
 
 Fid *fids;
 Service *services[Nsvcs];
 char	*svcfile;
-int	readonly;
+int		readonly;
 ulong	uniq;
 uchar	mdata[8192 + IOHDRSZ];
-int	messagesize = sizeof mdata;
+int		messagesize = sizeof mdata;
 
 Service *findsvc(char*);
 Service *installsvc(char*);
 void	insertsvc(Service*);
-int	removesvc(Service*);
-int	readservices(void);
-int	writeservices(void);
-int	dostat(Service*, ulong, void*, int);
+int		removesvc(Service*);
+int		readservices(void);
+int		writeservices(void);
+int		dostat(Service*, ulong, void*, int);
 void	io(int, int);
-Qid	mkqid(Service*, ulong);
+Qid		mkqid(Service*, ulong);
 ulong	hash(char*);
-Fid	*findfid(int);
+Fid		*findfid(int);
 void	*emalloc(ulong);
 char	*estrdup(char*);
 
@@ -422,9 +422,6 @@ Read(Fid *f)
 	case Qdesc:
 		sprint(data, "%s\n", f->svc->description);
 		goto Readstr;
-	case Qlog:
-		sprint(data, "%s\n", "TODO");
-		goto Readstr;
 	default:
 		return "permission denied";
 	}	
@@ -445,14 +442,14 @@ Write(Fid *f)
 	data = rhdr.data;
 	switch(f->qtype) {
 	case Qaddr:
-		if(n > 512)
+		if(n > MAXADDR)
 			return "address too big!";
 		memmove(f->svc->addr, data, n);
 		f->svc->addr[n] = '\0';
 		thdr.count = n;
 		break;
 	case Qdesc:
-		if(n > 1024)
+		if(n > MAXPATHLEN)
 			return "description too long";
 		memmove(f->svc->description, data, n);
 		f->svc->description[n] = '\0';
@@ -462,7 +459,6 @@ Write(Fid *f)
 	case Qsvc:
 	case Quptime:
 	case Qstatus:
-	case Qlog:
 	default:
 		return "permission denied";
 	}
@@ -572,28 +568,137 @@ dostat(Service *svc, ulong qtype, void *p, int n)
 void
 writeservices(void)
 {
+	int entrylen;
 	int fd, ns, i;
 	Service *svc;
-	uchar *buf;
+	uchar *p, *buf;
 
 	if(readonly){
 		fprint(2, "attempted to write services to disk in a readonly system\n");
 		return;
 	}
 	
+	// Timestamp + status
+	entrylen = MAXPATHLEN + MAXADDR + MAXDESC + 4 + 1; 
 	/* Count our services */
-	for(i = 0; i < Nsvcs; i++){
+	for(i = 0; i < Nsvcs; i++)
 		for(svc = svcs[i]; svc != nil; svc = svc->link)
 			ns++;
+
+	/* Make a buffer large enough to hold each line */
+	buf = emalloc(su * entrylen);
+	p = buf;
+	for(i = 0; i < Nsvcs; i++)
+		for(svc = svcs[i]; svc !=nil; svc = svc->link){
+			strncpy((char *)p, svc->name, Namelen);
+			p += Namelen;
+			strncpy((char *)p, svc->description, MAXDESC);
+			p += MAXDESC;
+			strncpy((char *)p, svc->addr, MAXADDR);
+			p += MAXADDR;
+			*p++ = svc->status;
+			*p++ = svc->uptime;
+			*p++ = svc->uptime >> 8;
+			*p++ = svc->uptime >> 16;
+			*p++ = svc->uptime >> 24;
+		}
+	
+	fd = create(svcfile, OWRITE, 0666);
+	if(fd < 0){
+		fprint(2, "svcfs: can't write %s: %r\n", svcfile);
+		free(buf);
+		return;
+	}
+	if(write(fd, buf, p - buf) != (p - buf))
+		fprint(2, "svcfs: can't write %s: %r\n", svcfile);
+	close(fd);
+	free(buf);
+}
+
+int
+svcok(char *svc, int nu)
+{
+	int i, n, rv;
+	Rune r;
+	char buf[Namelen+1];
+
+	memset(buf, 0, sizeof buf);
+	memmove(buf, svc, MAXPATHLEN);
+
+	if(buf[Namelen-1] != 0){
+		fprint(2, "svcfs: %d: no termination: %W\n", nu, buf);
+		return -1;
 	}
 
-	
+	rv = 0;
+	for(i = 0; buf[i]; i += n){
+		n = chartorune(&r, buf+i);
+		if(r == Runeerror){
+			rv = -1;
+		} else if(isascii(r) && iscntrl(r) || r == ' ' || r == '/'){
+			rv = -1;
+		}
+	}
+
+	if(i == 0){
+		fprint(2, "svcfs: %d: nil name\n", nu);
+		return -1;
+	}
+	if(rv == -1)
+		fprint(2, "svcfs: %d: bad syntax: %W\n", nu, buf);
+	return rv;
 }
 
 int
 readservices(void)
 {
-	//
+	int fd, i, n, ns;
+	uchar *p, *buf, *ep;
+	Service *svc;
+	Dir *d;
+
+	/* Read our file into buf */
+	fd = open(svcfile, OREAD);
+	if(fd < 0){
+		fprint(2, "svcfs: can't read %s: %r\n", svcfile);
+		return;
+	}
+	d = dirfstat(fd);
+	if(d == nil){
+		close(fd);
+		return;
+	}
+	buf = emalloc(d->length);
+	n = readn(fd, buf, d->length);
+	close(fd);
+	free(d);
+	if(n != d->length){
+		free(buf);
+		return 0;
+	}
+	// Timestamp + status
+	entrylen = MAXPATHLEN + MAXADDR + MAXDESC + 4 + 1; 
+	n = n / entrylen;
+	ns = 0;
+	for(i = 0; i < n; ep += entrylen, i++){
+		if(svcok((char *)ep, i) < 0)
+			continue;
+		svc = findsvc((char *)ep);
+		if(svc == nil)
+			svc = installsvc((char *)ep);
+		memmove(svc->description, ep + MAXPATHLEN, MAXDESC);
+		memmove(svc->addr, ep + MAXPATHLEN + MAXDESC, MAXADDR);
+		p = ep + MAXPATHLEN + MAXDESC + MAXADDR;
+		
+		svc->status = *p++;
+		if(svc->status >= Smax)
+			fprint(2, "svcfs: warning: bad status in key file\n");
+		svc->expire = p[0] + (p[1]<<8) + (p[2]<<16) + (p[3]<<24);
+		ns++;
+	}
+	free(buf);
+
+	print("%d services read in\n", ns);
 	return 1;
 }
 

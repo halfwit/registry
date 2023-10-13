@@ -36,6 +36,8 @@ Usage: `aux/svcfs [-r] [-m mtpt] servicesfile`
 `svcfs` manages the contents of a file, `/adm/services`, which it will read in on startup
 It serves up on mtpt, by default using `/mnt/services`
 
+A service can be added by creating a directory. Services may be read by anyone, but can only be modified by the creator or registry owner. Write requests must come from users in the same authdom.
+
 Each service dir contains many of the following files: 
  - addr
  - auth
@@ -43,19 +45,19 @@ Each service dir contains many of the following files:
  - uptime
  - description
 
-A service can be added by creating a directory. Services may be read by anyone, but can only be modified by the creator or registry owner. Write requests must come from users in the same authdom.
-
+### Notes
  - It may be beneficial to expose an events file that `services` can do a blocking read on, waiting for a service to be removed/added
  - `auth` is an optional address for the auth server to use
 
 ## svc/services 
 
 Usage: `svc/services [-o] [-f servicesdb] [-s svcfs]`
-- `-o` Alternate naming in services, `ipnet.sysname.service`
+
+- `-o` Alternate naming in services, `ipnet.sysname.svcname`
 - `-f` Read in services from db
 - `-s` Address of svcfs
 
-Registry connects to a `svcfs`, by default checking for an entry in your local ipnet=. 
+Services connects to a `svcfs`, by default checking for an entry in your local ipnet=. 
 Without `-f`, it checks for and parses `/cfg/$sysname/registry`. (`-f` and the default directroy are temporary stopgaps before services can be self-publishing)
 
 ```
@@ -78,7 +80,7 @@ Usage: `svc/query [-s svcfs] query`
 Query the svcfs for any services matching query. It returns a tuple for each match
 
 ```
-$ svcquery speakers
+$ svc/query speakers
 service=speakers addr=livingroom!12345 description='Living room speakers' uptime=1239021 status=ok
 service=speakers addr=bedroom!1234 description='Bedroom speakers' uptime=123811 status=ok
 ```
@@ -100,7 +102,6 @@ This will remove the service entry from the `svcfs`. This must be ran as the use
 Usage: `svc/update [-s svcfs] svcname [attr value]`
 
 This replaces the given attr/value pairs with the ones provided. This must be ran as the user who created the service entry, or the hostowner of `svcfs`.
-
 - `attr` can be one of `description` or `auth`
 
 ## Future
