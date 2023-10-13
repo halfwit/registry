@@ -583,8 +583,7 @@ writeservices(void)
 		return;
 	}
 	
-	// Timestamp + status
-	entrylen = Namelen + MAXADDR + MAXDESC + 3; 
+	entrylen = Namelen + MAXADDR + MAXDESC;
 	/* Count our services */
 	for(i = 0; i < Nsvcs; i++)
 		for(svc = services[i]; svc != nil; svc = svc->link)
@@ -592,17 +591,17 @@ writeservices(void)
 
 	/* Make a buffer large enough to hold each line */
 	buf = emalloc(ns * entrylen);
+	memset(buf, '·', entrylen);
 	p = buf;
 	for(i = 0; i < Nsvcs; i++)
 		for(svc = services[i]; svc !=nil; svc = svc->link){
-			memset(
 			strncpy((char *)p, svc->name, Namelen);
 			p += Namelen;
+			strncpy((char *)p, svc->addr, MAXADDR);
+			p += MAXADDR;
 			strncpy((char *)p, svc->description, MAXDESC);
 			p += MAXDESC;
-			strncpy((char *)p, svc->addr, MAXADDR);
 		}
-	
 	fd = create(svcfile, OWRITE, 0660);
 	if(fd < 0){
 		fprint(2, "svcfs: can't write %s: %r\n", svcfile);
@@ -616,11 +615,70 @@ writeservices(void)
 }
 
 int
+svcok(char *svc, int nu)
+{
+	int i, n, rv;
+	Rune r;
+	char buf[Namelen+1];
+
+	memset(buf, 0, sizeof buf);
+	memmove(buf, svc, Namelen);
+
+	if(buf[Namelen-1] != 0){
+		fprint(2, "keyfs: %d: no termination: %W\n", nu, buf);
+		return -1;
+	}
+
+	rv = 0;
+	for(i = 0; buf[i]; i += n){
+		n = chartorune(&r, buf+i);
+		if(r == Runeerror){
+			rv = -1;
+		} else if(isascii(r) && iscntrl(r) || r == ' ' || r == '/'){
+			rv = -1;
+		} else if(r == '·') /* Scrub our spacer out */
+			buf[i] = 0;
+	}
+
+	if(i == 0){
+		fprint(2, "keyfs: %d: nil name\n", nu);
+		return -1;
+	}
+	if(rv == -1)
+		fprint(2, "keyfs: %d: bad syntax: %W\n", nu, buf);
+	return rv;
+}
+
+char *
+scrub(uchar *ep, int len)
+{
+	int i, n;
+	Rune r;
+	char buf[len+1];
+
+	memset(buf, 0, sizeof buf);
+	memmove(buf, ep, len);
+
+	for(i = 0; buf[i]; i += n){
+		n = chartorune(&r, buf+i);
+		if(r == Runeerror){
+			return 'error';
+		}
+		if(r == '·')
+			buf[i] = 0;
+	}
+	if(i == 0){
+		return "No description provided";
+	}
+	return buf;
+}
+
+int
 readservices(void)
 {
-	int fd, i, n, ns;
-	int entrylen;
-	uchar *p, *buf, *ep;
+	int fd, i, n, ns, entrylen;
+	uchar *buf, *ep;
+	char *name;
 	Service *svc;
 	Dir *d;
 
@@ -643,25 +701,17 @@ readservices(void)
 		free(buf);
 		return 0;
 	}
-	// Timestamp + status
-	entrylen = Namelen + MAXADDR + MAXDESC + 4 + 1;
+	ep = buf;
+	free(buf);
+	entrylen = Namelen + MAXDESC + MAXADDR;
 	n = n / entrylen;
 	ns = 0;
-	ep = buf;
 	for(i = 0; i < n; ep += entrylen, i++){
-		
 		svc = findsvc((char *)ep);
 		if(svc == nil)
 			svc = installsvc((char *)ep);
-		memmove(svc->description, ep + Namelen, MAXDESC);
-		memmove(svc->addr, ep + Namelen + MAXDESC, MAXADDR);
-		p = ep + Namelen + MAXDESC + MAXADDR;
-
-		svc->status = *p++;
-		if(svc->status >= Smax)
-			fprint(2, "svcfs: warning: bad status in key file\n");
-		// TODO: Adjust between last read and now
-		svc->uptime = p[0] + (p[1]<<8) + (p[2]<<16) + (p[3]<<24);
+		svc->description = scrub(ep + Namelen, MAXDESC);
+		svc->addr = scrub(ep + Namelen + MAXDESC, MAXADDR);
 		ns++;
 	}
 	free(buf);
