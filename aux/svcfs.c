@@ -17,6 +17,7 @@ enum {
 	Qstatus,
 	Quptime,
 	Qdesc,
+	Qmax,
 
 	Namelen = 28,
 	Nsvcs = 512,
@@ -70,6 +71,7 @@ Service *services[Nsvcs];
 char	*svcfile;
 int		readonly;
 ulong	uniq;
+fcall   rhdr, thdr;
 uchar	mdata[8192 + IOHDRSZ];
 int		messagesize = sizeof mdata;
 
@@ -79,6 +81,7 @@ void	insertsvc(Service*);
 int		removesvc(Service*);
 int		readservices(void);
 int		writeservices(void);
+void	error(char*);
 int		dostat(Service*, ulong, void*, int);
 void	io(int, int);
 Qid		mkqid(Service*, ulong);
@@ -172,6 +175,7 @@ Flush(Fid *f)
 char *
 Auth(Fid *f)
 {
+	USED(f);
 	return "svcfs: authentication not required";
 }
 
@@ -221,7 +225,7 @@ Walk(Fid *f)
 		return "walk of unused fid";
 	nf = nil;
 	qtype = f->qtype;
-	sve = f->svc;
+	svc = f->svc;
 	if(rhdr.fid != rhdr.newfid){
 		nf = findfid(rhdr.newfid);
 		if(nf->busy)
@@ -257,7 +261,7 @@ Walk(Fid *f)
 				max = Qmax;
 				for(j = Qsvc + 1; j < Qmax; j++)
 					if(strcmp(name, qinfo[j]) == 0){
-						type = j;
+						qtype = j;
 						break;
 					}
 				if(j < max)
@@ -275,7 +279,7 @@ Walk(Fid *f)
 	}
 	if(err != nil)
 		return err;
-	if(rhdr.fid != rhdr.newfd && i == rhdr.nwname){
+	if(rhdr.fid != rhdr.newfid && i == rhdr.nwname){
 		nf->busy = 1;
 		nf->qtype = qtype;
 		nf->svc = svc;
@@ -297,7 +301,7 @@ char *
 Clunk(Fid *f)
 {
 	f->busy = 0;
-	if(f->svc != nil && --f->svc->ref == 0 && f->user->removed) {
+	if(f->svc != nil && --f->svc->ref == 0 && f->svc->removed) {
 		free(f->svc->name);
 		free(f->svc);
 	}
@@ -313,7 +317,7 @@ Open(Fid *f)
 	if(!f->busy)
 		return "open of unused fid";
 	mode = rhdr.mode;
-	if(f->qtype == Qsvc && (mode & OWRITE|OTRUNC)))
+	if(f->qtype == Qsvc && (mode & (OWRITE|OTRUNC)))
 		return "Service already exists";
 	thdr.qid = mkqid(f->svc, f->qtype);
 	thdr.iounit = messagesize - IOHDRSZ;
@@ -442,14 +446,14 @@ Write(Fid *f)
 	data = rhdr.data;
 	switch(f->qtype) {
 	case Qaddr:
-		if(n > MAXADDR)
+		if(n > Namelen)
 			return "address too big!";
 		memmove(f->svc->addr, data, n);
 		f->svc->addr[n] = '\0';
 		thdr.count = n;
 		break;
 	case Qdesc:
-		if(n > MAXPATHLEN)
+		if(n > Namelen)
 			return "description too long";
 		memmove(f->svc->description, data, n);
 		f->svc->description[n] = '\0';
@@ -579,7 +583,7 @@ writeservices(void)
 	}
 	
 	// Timestamp + status
-	entrylen = MAXPATHLEN + MAXADDR + MAXDESC + 4 + 1; 
+	entrylen = Namelen + MAXADDR + MAXDESC + 4 + 1; 
 	/* Count our services */
 	for(i = 0; i < Nsvcs; i++)
 		for(svc = svcs[i]; svc != nil; svc = svc->link)
@@ -623,7 +627,7 @@ svcok(char *svc, int nu)
 	char buf[Namelen+1];
 
 	memset(buf, 0, sizeof buf);
-	memmove(buf, svc, MAXPATHLEN);
+	memmove(buf, svc, Namelen);
 
 	if(buf[Namelen-1] != 0){
 		fprint(2, "svcfs: %d: no termination: %W\n", nu, buf);
@@ -677,7 +681,7 @@ readservices(void)
 		return 0;
 	}
 	// Timestamp + status
-	entrylen = MAXPATHLEN + MAXADDR + MAXDESC + 4 + 1; 
+	entrylen = Namelen + MAXADDR + MAXDESC + 4 + 1; 
 	n = n / entrylen;
 	ns = 0;
 	for(i = 0; i < n; ep += entrylen, i++){
@@ -686,10 +690,10 @@ readservices(void)
 		svc = findsvc((char *)ep);
 		if(svc == nil)
 			svc = installsvc((char *)ep);
-		memmove(svc->description, ep + MAXPATHLEN, MAXDESC);
-		memmove(svc->addr, ep + MAXPATHLEN + MAXDESC, MAXADDR);
-		p = ep + MAXPATHLEN + MAXDESC + MAXADDR;
-		
+		memmove(svc->description, ep + Namelen, MAXDESC);
+		memmove(svc->addr, ep + Namelen + MAXDESC, MAXADDR);
+		p = ep + Namelen + MAXDESC + MAXADDR;
+
 		svc->status = *p++;
 		if(svc->status >= Smax)
 			fprint(2, "svcfs: warning: bad status in key file\n");
@@ -850,4 +854,11 @@ estrdup(char *s)
 	d = emalloc(n);
 	memmove(d, s, n);
 	return d;
+}
+
+void
+error(char *s)
+{
+	fprint(2, "svcfs: %s\n", s);
+	exits(2);
 }
