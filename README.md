@@ -85,25 +85,17 @@ service=speakers addr=livingroom!12345 description='Living room speakers' uptime
 service=speakers addr=bedroom!1234 description='Bedroom speakers' uptime=123811 status=ok
 ```
 
-## svc/add 
-Usage: `svc/add [-s svcfs] svcname addr [attr value]`
+## svc/publish 
+Usage: `svc/publsh [-s svcfs] [-a authdom] svcname addr [attr value]`
 
-Create a service entry on the given `svcfs`, by default using the `registry=` value in `/lib/ndb/local`.
+Create a service entry on the given `svcfs`, by default using the `registry=` value in `/lib/ndb/local`. If a service already exists, it will attempt to update the svcfs with the attr/values given.
 
 - `attr` can be one of `description` or `auth`
 
-## svc/rm
-Usage: `svc/rm [-s svcfs] svcname`
+## svc/drop
+Usage: `svc/drop [-s svcfs] [-a authdom] svcname`
 
 This will remove the service entry from the `svcfs`. This must be ran as the user who created the service entry, or the hostowner of `svcfs`.
 
-## svc/update
-
-Usage: `svc/update [-s svcfs] svcname [attr value]`
-
-This replaces the given attr/value pairs with the ones provided. This must be ran as the user who created the service entry, or the hostowner of `svcfs`.
-- `attr` can be one of `description` or `auth`
-
 ## Future
-- Libraries for services to publish services
 - Integration into `cpurc`

@@ -1,10 +1,13 @@
 # svcfs
 </$objtype/mkfile
 
+HFILES ../include/service.h
+
 TARG = svcfs
+
 OFILES =\
 	svcfs.$O
 
 BIN=/$objtype/bin/aux
 
-<//sys/src/cmd/mkone
+</sys/src/cmd/mkone

@@ -34,14 +34,24 @@ if(~ $svcfs ""){
 	exits 'registry'
 }
 # Ours, we check later for the one associated with svcfs
+# With -s, parse the addr ipnet if exists and use that instead
 ipnet=`{ndb/ipquery sys $sysname ipnet | sed 's/ipnet=//'}
 
-# Connect to svcfs
-# Initial writes
-# Initial read + post everything
-#  - if we posted the service, service.local
-# Try /cfg/sysname/services if not set
+fn mount {
+	# Mount up svcfs in our namespace
+	srv -c -m $svcfs^'!16675' services /mnt/services
+
+}
+
+fn publish {
+	# Try /cfg/sysname/services if not set
+	# Initial read + post everything
+	#  - if we posted the service, service.local
+}
+
+fn serve {
+
+}
+
 # Walk the dir, parse addr file + build /srv/service.sysname.ipnet
 # With -o, /srv/ipnet.sysname.service
-# Lookup our own ipnet
-# With -s, parse the addr ipnet if exists and use that instead

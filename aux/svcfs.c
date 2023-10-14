@@ -2,14 +2,10 @@
 #include <libc.h>
 #include <ctype.h>
 #include <fcall.h>
-
-// fs
-//  - addr, description, status, etc in dir from backing. 
-//  - uptime from keepalive thread
-// Every run, we check and set status + uptime
+#include <service.h>
 
 typedef struct Fid Fid;
-typedef struct Service Service;
+typedef struct Entry Entry;
 
 enum {
 	Qroot,
@@ -20,10 +16,6 @@ enum {
 	Qdesc,
 	Qmax,
 
-	Namelen = 28,
-	Nsvcs = 512,
-	MAXDESC = 256,
-	MAXADDR = 128,
 	RS = 0x1e,
 };
 
@@ -37,22 +29,18 @@ enum {
 struct Fid {
 	int	fid;
 	ulong	qtype;
-	Service *svc;
+	Entry *svc;
 	int	busy;
 	Fid	*next;
 };
 
-struct Service {
-	char	*name;
-	char	*description;
-	char	*addr;
+struct Entry {
+	Service *svc;
 	char	removed;
-	int	ref;
-	vlong	uptime;
+	int		ref;
 	ulong	uniq;
 	uchar	persist;
-	uchar	status;
-	Service *link;
+	Entry *link;
 };
 
 char *qinfo[Qmax] = {
@@ -71,7 +59,7 @@ char *status[Smax] = {
 };
 
 Fid *fids;
-Service *services[Nsvcs];
+Entry *services[Nsvcs];
 char	*svcfile;
 int		readonly;
 ulong	uniq;
@@ -79,17 +67,17 @@ Fcall   rhdr, thdr;
 uchar	mdata[8192 + IOHDRSZ];
 int		messagesize = sizeof mdata;
 
-Service *findsvc(char*);
-Service *installsvc(char*);
-void	insertsvc(Service*);
-int		removesvc(Service*);
+Entry *findsvc(char*);
+Entry *installsvc(char*);
+void	insertsvc(Entry*);
+int		removesvc(Entry*);
 int		readservices(void);
-void		writeservices(void);
+void	writeservices(void);
 void	error(char*);
-int		dostat(Service*, ulong, void*, int);
+int		dostat(Entry*, ulong, void*, int);
 void	watch(void);
 void	io(int, int);
-Qid		mkqid(Service*, ulong);
+Qid		mkqid(Entry*, ulong);
 ulong	hash(char*);
 Fid		*findfid(int);
 void	*emalloc(ulong);
@@ -230,13 +218,13 @@ Walk(Fid *f)
 	int i, j, max;
 	Fid *nf;
 	ulong qtype;
-	Service *svc;
+	Entry *e;
 
 	if(!f->busy)
 		return "walk of unused fid";
 	nf = nil;
 	qtype = f->qtype;
-	svc = f->svc;
+	e = f->svc;
 	if(rhdr.fid != rhdr.newfid){
 		nf = findfid(rhdr.newfid);
 		if(nf->busy)
@@ -256,17 +244,17 @@ Walk(Fid *f)
 			case Qroot:
 				if(strcmp(name, "..") == 0)
 					goto Accept;
-				svc = findsvc(name);
-				if(svc == nil)
+				e = findsvc(name);
+				if(e == nil)
 					goto Out;
 				qtype = Qsvc;
 			Accept:
-				thdr.wqid[i] = mkqid(svc, qtype);
+				thdr.wqid[i] = mkqid(e, qtype);
 				break;
 			case Qsvc:
 				if(strcmp(name, "..") == 0) {
 					qtype = Qroot;
-					svc = nil;
+					e = nil;
 					goto Accept;
 				}
 				max = Qmax;
@@ -293,16 +281,16 @@ Walk(Fid *f)
 	if(rhdr.fid != rhdr.newfid && i == rhdr.nwname){
 		nf->busy = 1;
 		nf->qtype = qtype;
-		nf->svc = svc;
-		if(svc != nil)
-			svc->ref++;
+		nf->svc = e;
+		if(e != nil)
+			e->ref++;
 	} else if(nf == nil && rhdr.nwname > 0){
 		Clunk(f);
 		f->busy = 1;
 		f->qtype = qtype;
-		f->svc = svc;
-		if(svc != nil)
-			svc->ref++;
+		f->svc = e;
+		if(e != nil)
+			e->ref++;
 	}
 	thdr.nwqid = i;
 	return 0;		
@@ -313,9 +301,10 @@ Clunk(Fid *f)
 {
 	f->busy = 0;
 	if(f->svc != nil && --f->svc->ref == 0 && f->svc->removed) {
-		free(f->svc->name);
-		free(f->svc->description);
-		free(f->svc->addr);
+		free(f->svc->svc->name);
+		free(f->svc->svc->description);
+		free(f->svc->svc->addr);
+		free(f->svc->svc);
 		free(f->svc);
 	}
 	f->svc = nil;
@@ -355,7 +344,7 @@ Create(Fid *f)
 		return "permission denied";
 	if(strcmp(name, "") == 0)
 		return "empty file name";
-	if(strlen(name) >= Namelen)
+	if(strlen(name) >= NAMELEN)
 		return "file name too long";
 	if(findsvc(name) != nil)
 		return "svc already exists";
@@ -372,7 +361,7 @@ Create(Fid *f)
 char *
 Read(Fid *f)
 {
-	Service *svc;
+	Entry *e;
 	char *data;
 	ulong off, n, m;
 	int i, j, max;
@@ -387,8 +376,8 @@ Read(Fid *f)
 	case Qroot:
 		j = 0;
 		for(i = 0; i < Nsvcs; i++)
-			for(svc = services[i]; svc != nil; j += m, svc = svc->link){
-				m = dostat(svc, Qsvc, data, n);
+			for(e = services[i]; e != nil; j += m, e = e->link){
+				m = dostat(e, Qsvc, data, n);
 				if(m <= BIT16SZ)
 					break;
 				if(j < off)
@@ -415,7 +404,7 @@ Read(Fid *f)
 		return 0;
 
 	case Qstatus:
-		sprint(data, "%s\n", status[f->svc->status]);
+		sprint(data, "%s\n", status[f->svc->svc->status]);
 	Readstr:
 		m = strlen(data);
 		if(off >= m)
@@ -431,13 +420,13 @@ Read(Fid *f)
 		thdr.count = n;
 		return 0;
 	case Qaddr:
-		sprint(data, "%s\n", f->svc->addr);
+		sprint(data, "%s\n", f->svc->svc->addr);
 		goto Readstr;
 	case Quptime:
-		sprint(data, "%lld\n", f->svc->uptime);
+		sprint(data, "%lld\n", f->svc->svc->uptime);
 		goto Readstr;
 	case Qdesc:
-		sprint(data, "%s\n", f->svc->description);
+		sprint(data, "%s\n", f->svc->svc->description);
 		goto Readstr;
 	default:
 		return "permission denied";
@@ -458,21 +447,21 @@ Write(Fid *f)
 	data = rhdr.data;
 	switch(f->qtype) {
 	case Qaddr:
-		if(n > Namelen)
+		if(n > NAMELEN)
 			return "address too big!";
 		if(data[n-1] = '\n')
 			n--;
-		memmove(f->svc->addr, data, n);
-		f->svc->addr[n] = '\0';
+		memmove(f->svc->svc->addr, data, n);
+		f->svc->svc->addr[n] = '\0';
 		thdr.count = n;
 		break;
 	case Qdesc:
-		if(n > Namelen)
+		if(n > NAMELEN)
 			return "description too long";
 		if(data[n-1] = '\n')
 			n--;
-		memmove(f->svc->description, data, n);
-		f->svc->description[n] = '\0';
+		memmove(f->svc->svc->description, data, n);
+		f->svc->svc->description[n] = '\0';
 		thdr.count = n;
 		break;
 	case Qroot:
@@ -536,28 +525,28 @@ Wstat(Fid *f)
 	if(convM2D(rhdr.stat, rhdr.nstat, &d, buf) == 0)
 		return "bad stat buffer";
 	n = strlen(d.name);
-	if(n == 0 || n > Namelen)
+	if(n == 0 || n > NAMELEN)
 		return "bad service name";
 	if(findsvc(d.name))
 		return "service already exists";
 	if(!removesvc(f->svc))
 		return "service already removed";
-	free(f->svc->name);
-	f->svc->name = estrdup(d.name);
+	free(f->svc->svc->name);
+	f->svc->svc->name = estrdup(d.name);
 	insertsvc(f->svc);
 	writeservices();
 	return 0;
 }
 
 Qid
-mkqid(Service *svc, ulong qtype)
+mkqid(Entry *e, ulong qtype)
 {
 	Qid q;
 
 	q.vers = 0;
 	q.path = qtype;
-	if(svc)
-		q.path |= svc->uniq * 0x100;
+	if(e)
+		q.path |= e->uniq * 0x100;
 	if(qtype == Qsvc || qtype == Qroot)
 		q.type = QTDIR;
 	else
@@ -566,16 +555,16 @@ mkqid(Service *svc, ulong qtype)
 }
 
 int
-dostat(Service *svc, ulong qtype, void *p, int n)
+dostat(Entry *e, ulong qtype, void *p, int n)
 {
 	Dir d;
 
 	if(qtype == Qsvc)
-		d.name = svc->name;
+		d.name = e->name;
 	else
 		d.name = qinfo[qtype];
 	d.uid = d.gid = d.muid = "none"; // Maybe reggie or so
-	d.qid = mkqid(svc, qtype);
+	d.qid = mkqid(e, qtype);
 	if(d.qid.type & QTDIR)
 		d.mode = 0777|DMDIR;
 	else
@@ -590,7 +579,7 @@ writeservices(void)
 {
 	int entrylen;
 	int fd, ns, i;
-	Service *svc;
+	Entry *e;
 	uchar *p, *buf;
 	ns = 0;
 
@@ -599,10 +588,10 @@ writeservices(void)
 		return;
 	}
 	
-	entrylen = Namelen + MAXADDR + MAXDESC;
+	entrylen = NAMELEN + MAXADDR + MAXDESC;
 	/* Count our services */
 	for(i = 0; i < Nsvcs; i++)
-		for(svc = services[i]; svc != nil; svc = svc->link)
+		for(e = services[i]; e != nil; e = e->link)
 			ns++;
 
 	/* Make a buffer large enough to hold each line */
@@ -610,12 +599,12 @@ writeservices(void)
 	memset(buf, RS, entrylen);
 	p = buf;
 	for(i = 0; i < Nsvcs; i++)
-		for(svc = services[i]; svc !=nil; svc = svc->link){
-			strncpy((char *)p, svc->name, Namelen);
-			p += Namelen;
-			strncpy((char *)p, svc->addr, MAXADDR);
+		for(e = services[i]; e !=nil; e = e->link){
+			strncpy((char *)p, e->svc->name, NAMELEN);
+			p += NAMELEN;
+			strncpy((char *)p, e->svc->addr, MAXADDR);
 			p += MAXADDR;
-			strncpy((char *)p, svc->description, MAXDESC);
+			strncpy((char *)p, e->svc->description, MAXDESC);
 			p += MAXDESC;
 		}
 	fd = create(svcfile, OWRITE, 0660);
@@ -635,12 +624,12 @@ svcok(char *svc, int nu)
 {
 	int i, n, rv;
 	Rune r;
-	char buf[Namelen+1];
+	char buf[NAMELEN+1];
 
 	memset(buf, 0, sizeof buf);
-	memmove(buf, svc, Namelen);
+	memmove(buf, svc, NAMELEN);
 
-	if(buf[Namelen-1] != 0){
+	if(buf[NAMELEN-1] != 0){
 		fprint(2, "svcfs: %d: no termination\n", nu);
 		return -1;
 	}
@@ -694,7 +683,7 @@ readservices(void)
 {
 	int fd, i, n, ns, entrylen;
 	uchar *buf, *ep;
-	Service *svc;
+	Entry *e;
 	Dir *d;
 
 	/* Read our file into buf */
@@ -717,15 +706,15 @@ readservices(void)
 		return 0;
 	}
 	ep = buf;
-	entrylen = Namelen + MAXDESC + MAXADDR;
+	entrylen = NAMELEN + MAXDESC + MAXADDR;
 	n = n / entrylen;
 	ns = 0;
 	for(i = 0; i < n; ep += entrylen, i++){
-		svc = findsvc((char *)ep);
-		if(svc == nil)
-			svc = installsvc((char *)ep);
-		svc->addr = scrub(ep + Namelen, MAXADDR);
-		svc->description = scrub(ep + Namelen + MAXADDR, MAXDESC);
+		e = findsvc((char *)ep);
+		if(e == nil)
+			e = installsvc((char *)ep);
+		e->svc->addr = scrub(ep + NAMELEN, MAXADDR);
+		e->svc->description = scrub(ep + NAMELEN + MAXADDR, MAXDESC);
 		ns++;
 	}
 	free(buf);
@@ -734,48 +723,49 @@ readservices(void)
 	return 1;
 }
 
-Service *
+Entry *
 installsvc(char *name)
 {
-	Service *svc;
+	Entry *e;
 	int h;
 
 	h = hash(name);
-	svc = emalloc(sizeof *svc);
-	svc->name = estrdup(name);
-	svc->description = estrdup("No description provided");
-	svc->addr = estrdup("none");
-	svc->removed = 0;
-	svc->ref = 0;
-	svc->status = Sreg;
-	svc->uniq = uniq++;
-	svc->link = services[h];
-	services[h] = svc;
-	return svc;
+	e = emalloc(sizeof *e);
+	e->svc = emalloc(sizeof Service);
+	e->svc->name = estrdup(name);
+	e->svc->description = estrdup("No description provided");
+	e->svc->addr = estrdup("none");
+	e->removed = 0;
+	e->ref = 0;
+	e->svc->status = Sreg;
+	e->uniq = uniq++;
+	e->link = services[h];
+	services[h] = e;
+	return e;
 }
 
-Service *
+Entry *
 findsvc(char *name)
 {
-	Service *svc;
+	Entry *e;
 
-	for(svc = services[hash(name)]; svc != nil; svc = svc->link)
-		if(strcmp(name, svc->name) == 0)
-			return svc;
+	for(e = services[hash(name)]; e != nil; e = e->link)
+		if(strcmp(name, e->svc->name) == 0)
+			return e;
 	return nil;
 }
 
 int
-removesvc(Service *svc)
+removesvc(Entry *e)
 {
-	Service *s, **last;
+	Entry *s, **last;
 	char *name;
 
-	svc->removed = 1;
-	name = svc->name;
+	e->removed = 1;
+	name = e->svc->name;
 	last = &services[hash(name)];
 	for(s = *last; s != nil; s = *last){
-		if(strcmp(name, s->name) == 0) {
+		if(strcmp(name, s->svc->name) == 0) {
 			*last = s->link;
 			return 1;
 		}
@@ -786,14 +776,14 @@ removesvc(Service *svc)
 }
 
 void
-insertsvc(Service *svc)
+insertsvc(Entry *e)
 {
 	int h;
 
-	svc->removed = 0;
-	h = hash(svc->name);
-	svc->link = services[h];
-	services[h] = svc;
+	e->removed = 0;
+	h = hash(e->svc->name);
+	e->link = services[h];
+	services[h] = e;
 }
 
 ulong
@@ -863,20 +853,20 @@ io(int in, int out)
 }
 
 int
-alive(Service *svc)
+alive(Entry *e)
 {
 	int fd;
 
-	if(strncmp(svc->addr, "none", 4) == 0)
+	if(strncmp(e->svc->addr, "none", 4) == 0)
 		return 2;
-	fd = dial(svc->addr, nil, nil, nil);
+	fd = dial(e->svc->addr, nil, nil, nil);
 	if(fd < 0){
-		if(svc->status == Sreg)
+		if(e->svc->status == Sreg)
 			return 2;
 		return -1;
 	}
 	close(fd);
-	if(svc->status == Sok)
+	if(e->svc->status == Sok)
 		return 1;
 	return 0;
 }
@@ -885,7 +875,7 @@ void
 watch(void)
 {
 	/* Status, uptime */
-	Service *svc;
+	Entry *e;
 	int i;
 	int seconds;
 	vlong start;
@@ -896,20 +886,20 @@ watch(void)
 		for(i = 0; i < seconds; i++)
 			sleep(1000);
 		for(i = 0; i < Nsvcs; i++)
-			for(svc = services[i]; svc !=nil; svc = svc->link)
-				switch(alive(svc)){
+			for(e = services[i]; e !=nil; e = e->link)
+				switch(alive(e)){
 				case -1: 
 					/* Offline */
-					svc->status = Sdown;
+					e->svc->status = Sdown;
 					break;
 				case 0:
 					/* Coming online */
-					svc->status = Sok;
-					svc->uptime = 0;
+					e->svc->status = Sok;
+					e->svc->uptime = 0;
 					break;
 				case 1:
-					svc->status = Sok;
-					svc->uptime += ((nsec() - start) / 1000000000LL);
+					e->svc->status = Sok;
+					e->svc->uptime += ((nsec() - start) / 1000000000LL);
 					break;
 				default:
 					/* Still in setup */
