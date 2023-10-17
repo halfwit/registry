@@ -1,37 +1,54 @@
 #include <u.h>
 #include <libc.h>
-#include "include/service.h"
+#include "libservice/service.h"
 
 static void
 usage(void)
 {
-	fprint(2, "usage: %s [-s svcfs] [-d authdom] query [attr value]\n", argv0);
+	fprint(2, "usage: %s [-s svcfs] [-d authdom] query [attr value...]\n", argv0);
 	exits("usage");
 }
 
 void
 search(int fd, char *query, char **argv, int argc)
 {
-	Ndbtuple *t, *tt;
+	Service *s, *svcs;
 
-	tt = svcquery(fd, query, argv, argc);
-	for(t = tt; t; t = t->entry)
-		print("%s=%s ", t->attr, t->val);
-	print("\n");
-	ndbfree(tt);
+	svcs = svcquery(fd, query, argv, argc);
+	for(s = svcs; s; s = s->next){
+		print("service=%s address=%s\n", s->name, s->address);
+		switch(s->status){
+		case Sok:
+			print("\tstatus=ok\n");
+			break;
+		case Sdown:
+			print("\tstatus=down\n");
+			break;
+		case Sreg:
+			print("\tstatus=registered\n");
+			break;
+		}
+		print("\tdescription=\'%s\'\n", s->description);
+		print("\tuptime=%T\n", s->uptime);
+		if(s->next != nil)
+			print("\n");
+	}
+	for(s = svcs; s;){
+		svcs = s->next;
+		free(s);
+		s = svcs;
+	}
 }
 
 void
 main(int argc, char *argv[])
 {
-	char *svcfs, *attr, *value;
+	char *svcfs;
 	char *authdom;
 	int fd;
 
 	svcfs = nil;
 	authdom = nil;
-	attr = nil;
-	value = nil;
 	ARGBEGIN{
 	case 's':
 		svcfs = EARGF(usage());
@@ -45,14 +62,12 @@ main(int argc, char *argv[])
 	}ARGEND
 	argv0 = "svcfs";
 
+	if(argc == 0)
+		usage();
+	fmtinstall('T', svctimefmt);
 	if((fd = svcdial(svcfs, authdom)) < 0)
 		exits("error");
 	search(fd, argv[0], argv+1, argc-1);
 	close(fd);
-	// Print out our query
 	exits(0);
-Error:
-	fprint(2, "Error with query: %r\n");
-	close(fd);
-	exits("error");
 }

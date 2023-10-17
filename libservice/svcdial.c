@@ -1,8 +1,6 @@
 #include <u.h>
 #include <libc.h>
-#include <bio.h>
-#include <ndb.h>
-#include "../include/service.h"
+#include "service.h"
 
 /* Connect to svcfs */
 int

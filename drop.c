@@ -1,6 +1,6 @@
 #include <u.h>
 #include <libc.h>
-#include "include/service.h"
+#include "libservice/service.h"
 
 static void
 usage(void)

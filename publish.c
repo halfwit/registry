@@ -1,6 +1,6 @@
 #include <u.h>
 #include <libc.h>
-#include "include/service.h"
+#include "libservice/service.h"
 
 static void
 usage(void)
@@ -51,7 +51,8 @@ main(int argc, char *argv[])
 	}
 	/* If create fails, try to continue to update values */
 	sprint(ap, "/mnt/services/%s", argv[0]);
-	if((fd = create(ap, OWRITE, DMDIR|0777)) < 0)
+	fd = create(ap, OWRITE, DMDIR|0777);
+	if(fd < 0)
 		goto Error;
 	sprint(ap, "/mnt/services/%s/address", argv[0]);
 	if((fd = open(ap, OWRITE)) < 0)

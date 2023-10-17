@@ -2,7 +2,7 @@
 #include <libc.h>
 #include <ctype.h>
 #include <fcall.h>
-#include "../include/service.h"
+#include "libservice/service.h"
 
 typedef struct Fid Fid;
 typedef struct Entry Entry;
@@ -15,15 +15,6 @@ enum {
 	Quptime,
 	Qdesc,
 	Qmax,
-	
-	RS = 0x1e,
-};
-
-enum {
-	Sok,
-	Sdown,
-	Sreg,
-	Smax,
 };
 
 struct Fid {
@@ -143,7 +134,7 @@ main(int argc, char *argv[])
 		error("Can't make pipe: %r");
 
 	readservices();
-	if((pid = rfork(RFPROC|RFMEM)) == 0) {
+	if((pid = rfork(RFPROC|RFNOTEG|RFMEM)) == 0) {
 		watch();
 		exits(0);
 	}

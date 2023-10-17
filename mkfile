@@ -7,9 +7,9 @@ TARG=\
 	query\
 	svcfs
 
-LIB=libservice.a
+LIB=libservice/libservice.a$O
 
-HFILES=include/service.h
+HFILES=libservice/service.h
 
 BIN=/$objtype/bin/svc
 
