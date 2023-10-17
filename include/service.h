@@ -1,4 +1,6 @@
+#include <bio.h>
 #include <ndb.h>
+
 typedef struct Service Service;
 
 enum {
@@ -8,6 +10,12 @@ enum {
     MAXADDR = 128,
 };
 
+enum {
+	Sok,
+	Sdown,
+	Sreg,
+	Smax,
+};
 
 struct Service {
     char name[NAMELEN];
@@ -18,4 +26,4 @@ struct Service {
 };
 
 int svcdial(char *netroot, char *authdom);
-int svcquery(int fd, char *query, Ndbtuple *t);
+Nbdtuple *svcquery(int fd, char *query, char **argv, int argc);

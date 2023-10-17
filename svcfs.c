@@ -2,7 +2,7 @@
 #include <libc.h>
 #include <ctype.h>
 #include <fcall.h>
-#include <service.h>
+#include "../include/service.h"
 
 typedef struct Fid Fid;
 typedef struct Entry Entry;
@@ -15,7 +15,7 @@ enum {
 	Quptime,
 	Qdesc,
 	Qmax,
-
+	
 	RS = 0x1e,
 };
 
@@ -37,7 +37,8 @@ struct Fid {
 struct Entry {
 	Service *svc;
 	char	removed;
-	int		ref;
+	int	ref;
+	vlong	uptime;
 	ulong	uniq;
 	uchar	persist;
 	Entry *link;
@@ -59,7 +60,7 @@ char *status[Smax] = {
 };
 
 Fid *fids;
-Entry *services[Nsvcs];
+Entry *services[NSVCS];
 char	*svcfile;
 int		readonly;
 ulong	uniq;
@@ -70,16 +71,16 @@ int		messagesize = sizeof mdata;
 Entry *findsvc(char*);
 Entry *installsvc(char*);
 void	insertsvc(Entry*);
-int		removesvc(Entry*);
-int		readservices(void);
+int	removesvc(Entry*);
+int	readservices(void);
 void	writeservices(void);
 void	error(char*);
-int		dostat(Entry*, ulong, void*, int);
+int	dostat(Entry*, ulong, void*, int);
 void	watch(void);
 void	io(int, int);
-Qid		mkqid(Entry*, ulong);
+Qid	mkqid(Entry*, ulong);
 ulong	hash(char*);
-Fid		*findfid(int);
+Fid	*findfid(int);
 void	*emalloc(ulong);
 char	*estrdup(char*);
 
@@ -301,10 +302,6 @@ Clunk(Fid *f)
 {
 	f->busy = 0;
 	if(f->svc != nil && --f->svc->ref == 0 && f->svc->removed) {
-		free(f->svc->svc->name);
-		free(f->svc->svc->description);
-		free(f->svc->svc->addr);
-		free(f->svc->svc);
 		free(f->svc);
 	}
 	f->svc = nil;
@@ -375,7 +372,7 @@ Read(Fid *f)
 	switch(f->qtype){
 	case Qroot:
 		j = 0;
-		for(i = 0; i < Nsvcs; i++)
+		for(i = 0; i < NSVCS; i++)
 			for(e = services[i]; e != nil; j += m, e = e->link){
 				m = dostat(e, Qsvc, data, n);
 				if(m <= BIT16SZ)
@@ -420,10 +417,10 @@ Read(Fid *f)
 		thdr.count = n;
 		return 0;
 	case Qaddr:
-		sprint(data, "%s\n", f->svc->svc->addr);
+		sprint(data, "%s\n", f->svc->svc->address);
 		goto Readstr;
 	case Quptime:
-		sprint(data, "%lld\n", f->svc->svc->uptime);
+		sprint(data, "%lld\n", f->svc->uptime);
 		goto Readstr;
 	case Qdesc:
 		sprint(data, "%s\n", f->svc->svc->description);
@@ -451,12 +448,12 @@ Write(Fid *f)
 			return "address too big!";
 		if(data[n-1] = '\n')
 			n--;
-		memmove(f->svc->svc->addr, data, n);
-		f->svc->svc->addr[n] = '\0';
+		memmove(f->svc->svc->address, data, n);
+		f->svc->svc->address[n] = '\0';
 		thdr.count = n;
 		break;
 	case Qdesc:
-		if(n > NAMELEN)
+		if(n > MAXDESC)
 			return "description too long";
 		if(data[n-1] = '\n')
 			n--;
@@ -532,7 +529,7 @@ Wstat(Fid *f)
 	if(!removesvc(f->svc))
 		return "service already removed";
 	free(f->svc->svc->name);
-	f->svc->svc->name = estrdup(d.name);
+	memmove(f->svc->svc->name, d.name, NAMELEN);
 	insertsvc(f->svc);
 	writeservices();
 	return 0;
@@ -560,7 +557,7 @@ dostat(Entry *e, ulong qtype, void *p, int n)
 	Dir d;
 
 	if(qtype == Qsvc)
-		d.name = e->name;
+		d.name = e->svc->name;
 	else
 		d.name = qinfo[qtype];
 	d.uid = d.gid = d.muid = "none"; // Maybe reggie or so
@@ -590,7 +587,7 @@ writeservices(void)
 	
 	entrylen = NAMELEN + MAXADDR + MAXDESC;
 	/* Count our services */
-	for(i = 0; i < Nsvcs; i++)
+	for(i = 0; i < NSVCS; i++)
 		for(e = services[i]; e != nil; e = e->link)
 			ns++;
 
@@ -598,11 +595,11 @@ writeservices(void)
 	buf = emalloc(ns * entrylen);
 	memset(buf, RS, entrylen);
 	p = buf;
-	for(i = 0; i < Nsvcs; i++)
+	for(i = 0; i < NSVCS; i++)
 		for(e = services[i]; e !=nil; e = e->link){
 			strncpy((char *)p, e->svc->name, NAMELEN);
 			p += NAMELEN;
-			strncpy((char *)p, e->svc->addr, MAXADDR);
+			strncpy((char *)p, e->svc->address, MAXADDR);
 			p += MAXADDR;
 			strncpy((char *)p, e->svc->description, MAXDESC);
 			p += MAXDESC;
@@ -683,7 +680,7 @@ readservices(void)
 {
 	int fd, i, n, ns, entrylen;
 	uchar *buf, *ep;
-	Entry *e;
+	Entry *svc;
 	Dir *d;
 
 	/* Read our file into buf */
@@ -710,11 +707,11 @@ readservices(void)
 	n = n / entrylen;
 	ns = 0;
 	for(i = 0; i < n; ep += entrylen, i++){
-		e = findsvc((char *)ep);
-		if(e == nil)
-			e = installsvc((char *)ep);
-		e->svc->addr = scrub(ep + NAMELEN, MAXADDR);
-		e->svc->description = scrub(ep + NAMELEN + MAXADDR, MAXDESC);
+		svc = findsvc((char *)ep);
+		if(svc == nil)
+			svc = installsvc((char *)ep);
+		memmove(svc->svc->address, scrub(ep + NAMELEN, MAXADDR), MAXADDR);
+		memmove(svc->svc->description, scrub(ep + NAMELEN + MAXADDR, MAXDESC), MAXDESC);
 		ns++;
 	}
 	free(buf);
@@ -727,18 +724,20 @@ Entry *
 installsvc(char *name)
 {
 	Entry *e;
+	Service *svc;
 	int h;
 
 	h = hash(name);
 	e = emalloc(sizeof *e);
-	e->svc = emalloc(sizeof Service);
-	e->svc->name = estrdup(name);
-	e->svc->description = estrdup("No description provided");
-	e->svc->addr = estrdup("none");
+	svc = emalloc(sizeof *svc);
+	memmove(svc->name, name, NAMELEN);
+	memmove(svc->description, "No description provided", MAXDESC);
+	memmove(svc->address, "none", 4);
+	svc->status = Sreg;
 	e->removed = 0;
 	e->ref = 0;
-	e->svc->status = Sreg;
 	e->uniq = uniq++;
+	e->svc = svc;
 	e->link = services[h];
 	services[h] = e;
 	return e;
@@ -794,7 +793,7 @@ hash(char *s)
 	h = 0;
 	while(*s)
 		h = (h << 1) ^ *s++;
-	return h % Nsvcs;
+	return h % NSVCS;
 }
 
 Fid *
@@ -853,20 +852,20 @@ io(int in, int out)
 }
 
 int
-alive(Entry *e)
+alive(Entry *svc)
 {
 	int fd;
 
-	if(strncmp(e->svc->addr, "none", 4) == 0)
+	if(strncmp(svc->svc->address, "none", 4) == 0)
 		return 2;
-	fd = dial(e->svc->addr, nil, nil, nil);
+	fd = dial(svc->svc->address, nil, nil, nil);
 	if(fd < 0){
-		if(e->svc->status == Sreg)
+		if(svc->svc->status == Sreg)
 			return 2;
 		return -1;
 	}
 	close(fd);
-	if(e->svc->status == Sok)
+	if(svc->svc->status == Sok)
 		return 1;
 	return 0;
 }
@@ -875,7 +874,7 @@ void
 watch(void)
 {
 	/* Status, uptime */
-	Entry *e;
+	Entry *svc;
 	int i;
 	int seconds;
 	vlong start;
@@ -885,21 +884,21 @@ watch(void)
 		start = nsec();
 		for(i = 0; i < seconds; i++)
 			sleep(1000);
-		for(i = 0; i < Nsvcs; i++)
-			for(e = services[i]; e !=nil; e = e->link)
-				switch(alive(e)){
+		for(i = 0; i < NSVCS; i++)
+			for(svc = services[i]; svc !=nil; svc = svc->link)
+				switch(alive(svc)){
 				case -1: 
 					/* Offline */
-					e->svc->status = Sdown;
+					svc->svc->status = Sdown;
 					break;
 				case 0:
 					/* Coming online */
-					e->svc->status = Sok;
-					e->svc->uptime = 0;
+					svc->svc->status = Sok;
+					svc->svc->uptime = 0;
 					break;
 				case 1:
-					e->svc->status = Sok;
-					e->svc->uptime += ((nsec() - start) / 1000000000LL);
+					svc->svc->status = Sok;
+					svc->svc->uptime += ((nsec() - start) / 1000000000LL);
 					break;
 				default:
 					/* Still in setup */

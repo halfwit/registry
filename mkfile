@@ -1,13 +1,20 @@
 # registry mkfile
 </$objtype/mkfile
 
-TARG =\
+TARG=\
 	drop\
 	publish\
 	query\
+	svcfs
 
-HFILES = include/service.h
+LIB=libservice.a
+
+HFILES=include/service.h
 
 BIN=/$objtype/bin/svc
+
+$LIB:
+	cd libservice
+	mk
 
 </sys/src/cmd/mkmany
