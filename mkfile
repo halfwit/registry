@@ -1,16 +1,20 @@
 # registry mkfile
 </$objtype/mkfile
 
-TARG =	\
-	registry\
-	regquery\
+TARG=\
+	drop\
+	publish\
+	query\
+	svcfs
 
-HFILES = dns.h /$objtype/lib/libndb.a
+LIB=libservice/libservice.a$O
 
-BIN=/$objtype/bin/ndb
+HFILES=libservice/service.h
+
+BIN=/$objtype/bin/svc
+
+$LIB:
+	cd libservice
+	mk
 
 </sys/src/cmd/mkmany
-
-$O.registry: registry.$O reglookup.$O
-	$LD -o $target $prereq
-

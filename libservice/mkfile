@@ -1,0 +1,17 @@
+</$objtype/mkfile
+
+LIB=libservice.a$O
+
+OFILES=\
+	svcdial.$O\
+	svcquery.$O\
+	svctimefmt.$O\
+
+HFILES=\
+	service.h
+
+</sys/src/cmd/mklib
+
+nuke:V:
+	mk clean
+	rm -f libservice.a$O
