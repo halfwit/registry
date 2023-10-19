@@ -39,8 +39,8 @@ It serves up on mtpt, by default using `/mnt/services`
 A service can be added by creating a directory. Services may be read by anyone, but can only be modified by the creator or registry owner. Write requests must come from users in the same authdom.
 
 Each service dir contains many of the following files: 
- - addr
- - auth
+ - address
+ - authdom (Still a TODO)
  - status (ok/down)
  - uptime
  - description
@@ -49,25 +49,15 @@ Each service dir contains many of the following files:
  - It may be beneficial to expose an events file that `services` can do a blocking read on, waiting for a service to be removed/added
  - `auth` is an optional address for the auth server to use
 
-## svc/services 
+## svc/monitor 
 
-Usage: `svc/services [-o] [-f servicesdb] [-s svcfs]`
+Usage: `svc/services [-o]  [-s svcfs]`
 
 - `-o` Alternate naming in services, `ipnet.sysname.svcname`
-- `-f` Read in services from db
 - `-s` Address of svcfs
 
-Services connects to a `svcfs`, by default checking for an entry in your local ipnet=. 
-Without `-f`, it checks for and parses `/cfg/$sysname/registry`. (`-f` and the default directroy are temporary stopgaps before services can be self-publishing)
-
-```
-## /cfg/mysystem/registry
-service=myservice
-    addr=tcp!myserver!19294
-    description='My shared service'
-```
-
-Services will populate your local /srv with an fd pointing to all records in the given `svcfs` as well as any local entries. 
+monitor connects to a `svcfs`, by default checking for an entry in your local ipnet=. 
+monitor will populate your local /srv with an fd pointing to all records in the given `svcfs`. 
 - If the status of a service changes from Ok, it will be automatically removed
 - multiple instances can be run, one per svcfs
 - on exit, all mounted services should be kept alive; so on start it should handle silently failing when an entry already exists
@@ -81,8 +71,14 @@ Query the svcfs for any services matching query. It returns a tuple for each mat
 
 ```
 $ svc/query speakers
-service=speakers addr=livingroom!12345 description='Living room speakers' uptime=1239021 status=ok
-service=speakers addr=bedroom!1234 description='Bedroom speakers' uptime=123811 status=ok
+service=speakers address=livingroom!12345 
+    description='Living room speakers'
+    uptime='4 days, 3 hour, 0 minutes'
+    status=ok
+service=speakers address=bedroom!1234
+    description='Bedroom speakers'  
+    uptime='55 days, 0 hours, 2 minutes'
+    status=ok
 ```
 
 ## svc/publish 
@@ -99,3 +95,4 @@ This will remove the service entry from the `svcfs`. This must be ran as the use
 
 ## Future
 - Integration into `cpurc`
+- Allow setting an Authdom for a services
