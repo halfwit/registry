@@ -411,7 +411,7 @@ Read(Fid *f)
 		sprint(data, "%s\n", f->svc->svc->address);
 		goto Readstr;
 	case Quptime:
-		sprint(data, "%lld\n", f->svc->uptime);
+		sprint(data, "%lld\n", f->svc->svc->uptime);
 		goto Readstr;
 	case Qdesc:
 		sprint(data, "%s\n", f->svc->svc->description);
@@ -847,7 +847,7 @@ alive(Entry *svc)
 {
 	int fd;
 
-	if(strncmp(svc->svc->address, "none", 4) == 0)
+	if(strcmp(svc->svc->address, "none") == 0)
 		return 2;
 	fd = dial(svc->svc->address, nil, nil, nil);
 	if(fd < 0){
@@ -856,9 +856,9 @@ alive(Entry *svc)
 		return -1;
 	}
 	close(fd);
-	if(svc->svc->status == Sok)
-		return 1;
-	return 0;
+	if(svc->svc->status != Sok)
+		return 0;
+	return 1;
 }
 
 void
@@ -876,7 +876,7 @@ watch(void)
 		for(i = 0; i < seconds; i++)
 			sleep(1000);
 		for(i = 0; i < NSVCS; i++)
-			for(svc = services[i]; svc !=nil; svc = svc->link)
+			for(svc = services[i]; svc != nil; svc = svc->link){
 				switch(alive(svc)){
 				case -1: 
 					/* Offline */
@@ -895,6 +895,7 @@ watch(void)
 					/* Still in setup */
 					break;
 				}
+			}
 	}
 }
 
