@@ -51,7 +51,7 @@ Each service dir contains many of the following files:
 
 ## svc/monitor 
 
-Usage: `svc/services [-o]  [-s svcfs]`
+Usage: `svc/monitor [-o]  [-s svcfs]`
 
 - `-o` Alternate naming in services, `ipnet.sysname.svcname`
 - `-s` Address of svcfs
