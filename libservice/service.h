@@ -30,3 +30,4 @@ struct Service {
 int svctimefmt(Fmt *f);
 int svcdial(char *netroot, char *authdom);
 Service* svcquery(int fd, char *query, char **argv, int argc);
+void svcfree(Service *);

@@ -5,7 +5,8 @@ TARG=\
 	drop\
 	publish\
 	query\
-	svcfs
+	svcfs\
+	monitor
 
 LIB=libservice/libservice.a$O
 

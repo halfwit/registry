@@ -6,6 +6,7 @@ OFILES=\
 	svcdial.$O\
 	svcquery.$O\
 	svctimefmt.$O\
+	svcfree.$O\
 
 HFILES=\
 	service.h

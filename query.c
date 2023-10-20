@@ -33,11 +33,7 @@ search(int fd, char *query, char **argv, int argc)
 		if(s->next != nil)
 			print("\n");
 	}
-	for(s = svcs; s;){
-		svcs = s->next;
-		free(s);
-		s = svcs;
-	}
+	svcfree(svcs);
 }
 
 void
