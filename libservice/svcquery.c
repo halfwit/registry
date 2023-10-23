@@ -2,47 +2,48 @@
 #include <libc.h>
 #include "service.h"
 
-char *
-readFile(char *dir, char *name, int len)
+int
+readFile(char *dir, char *name, char *buf, int len)
 {
 	int fd, n;
-	char buf[MAXDESC+1], path[NAMELEN+25];
+	char path[NAMELEN+25];
 
 	sprint(path, "/mnt/services/%s/%s", dir, name);
 	if((fd = open(path, OREAD)) < 0)
-		return nil;
+		return -1;
 	n = readn(fd, buf, len);
 	if(buf[n-1] == '\n' || buf[n-1] == RS)
-		buf[n-1] = '\0';
+		n--;
 	buf[n] = '\0';
 	close(fd);
-	return buf;
+	return n;
 }
 
 Service *
 addService(Dir d)
 {
 	Service *svc;
-	char *desc, *addr, *auth, *stat, *up;
+	char data[MAXDESC]; 
+	int n;
 
 	svc = malloc(sizeof *svc);
+	memset(svc, '\0', sizeof(svc));
 	memmove(svc->name, d.name, NAMELEN);
-	svc->name[strlen(d.name)] = '\0';
-	desc = readFile(d.name, "description", MAXDESC);
-	memmove(svc->description, desc, strlen(desc));
-	auth = readFile(d.name, "authdom", MAXAUTH);
-	memmove(svc->authdom, auth, strlen(auth));
-	addr = readFile(d.name, "address", MAXADDR);
-	memmove(svc->address, addr, strlen(addr));
+	memset(data, '\0', MAXDESC);
+	n = readFile(d.name, "description", data, MAXDESC);
+	memmove(svc->description, data, n);
+	n = readFile(d.name, "authdom", data, MAXAUTH);
+	memmove(svc->authdom, data, n);
+	n = readFile(d.name, "address", data, MAXADDR);
+	memmove(svc->address, data, n);
 	svc->status = Sreg;
-	stat = readFile(d.name, "status", 12);
-	if(strncmp(stat, "ok", 2) == 0)
+	readFile(d.name, "status", data, 12);
+	if(strncmp(data, "ok", 2) == 0)
 		svc->status = Sok;
-	if(strncmp(stat, "down", 4) == 0)
+	if(strncmp(data, "down", 4) == 0)
 		svc->status = Sdown;
-	up = readFile(d.name, "uptime", 64); /* Way huge */
-	svc->uptime = strtoll(up, nil, 10);
-
+	readFile(d.name, "uptime", data, 64); /* Way huge */
+	svc->uptime = strtoll(data, nil, 10);
 	return svc;
 }
 
@@ -72,8 +73,7 @@ svcquery(int fd, char *query, char **argv, int argc)
 {
 	Service *svc, *bsvc;
 	Dir *d;
-	int dfd, i, n;
-
+	int dfd, i, n;	
 	bsvc = nil;
 
 	/* Build out a tuple based on our search values */
@@ -82,6 +82,7 @@ svcquery(int fd, char *query, char **argv, int argc)
 	if(mount(fd, -1, "/mnt/services", MREPL, "") < 0)
 		return nil;
 	dfd = open("/mnt/services", OREAD);
+	d = nil;
 	while((n = dirread(dfd, &d)) > 0){
 		for(i=0; i < n; i++){
 			if(argc == 2 && filter(d[i], argv[0], argv[1]) < 0)
@@ -94,6 +95,7 @@ svcquery(int fd, char *query, char **argv, int argc)
 		}
 		free(d);	
 	}
+	close(dfd);
 	unmount(0, "/mnt/services");
 	return bsvc;
 }
