@@ -16,7 +16,7 @@ search(int fd, char *query, char **argv, int argc)
 
 	svcs = svcquery(fd, query, argv, argc);
 	for(s = svcs; s; s = s->next){
-		print("service=%s address=%s\n", s->name, s->address);
+		print("service=%s address=%s authdom=%s\n", s->name, s->address, s->authdom);
 		switch(s->status){
 		case Sok:
 			print("\tstatus=ok\n");

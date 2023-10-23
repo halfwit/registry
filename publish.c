@@ -5,7 +5,7 @@
 static void
 usage(void)
 {
-	fprint(2, "usage: %s [-s svcfs] [-d authdom] svcname addr [attr value]\n", argv0);
+	fprint(2, "usage: %s [-s svcfs] [-d authdom] [-p] svcname addr [attr value]\n", argv0);
 	exits("usage");
 }
 
@@ -13,16 +13,20 @@ void
 main(int argc, char *argv[])
 {
 	char *svcfs, *authdom, ap[NAMELEN];
-    	int i, fd, sfd;
+    	int i, fd, sfd, persist;
 
 	svcfs = nil;
 	authdom = nil;
+	persist = 0;
 	ARGBEGIN{
 	case 's':
 		svcfs = EARGF(usage());
 		break;
     	case 'a':
         	authdom = EARGF(usage());
+		break;
+	case 'p':
+		persist++;
 		break;
 	default:
 		usage();
@@ -59,6 +63,13 @@ main(int argc, char *argv[])
 		goto Error;
 	if(write(fd, argv[1], strlen(argv[1])) < 0)
 		goto Error;
+	if(persist == 1){
+		/* Touch persist */
+		sprint(ap, "/mnt/services/%s/persist", argv[0]);
+		if((fd = create(ap, OWRITE, 0660)) < 0)
+			goto Error;
+		close(fd);
+	}
 	/* Description, authdom */
 	if(argc == 2){
 		unmount("", "/mnt/services");
@@ -72,13 +83,15 @@ main(int argc, char *argv[])
 				goto Error;
 			if(write(fd, argv[i+1], strlen(argv[i+1])) < 0)
 				goto Error;
-		} /*else if(strcmp(argv[i], "authdom") == 0){
+			close(fd);
+		} else if (strcmp(argv[i], "authdom") == 0){
 			sprint(ap, "/mnt/services/%s/authdom", argv[0]);
 			if((fd = open(ap, OWRITE|OTRUNC)) < 0)
 				goto Error;
-			if(write(fd, argv[i+1], MAXADDR) <= 0)
+			if(write(fd, argv[i+1], strlen(argv[i+1])) <= 0)
 				goto Error;
-			}*/
+			close(fd);
+		}
 		i++;
 	}
 	unmount("", "/mnt/services");
