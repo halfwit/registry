@@ -2,8 +2,9 @@
 #include <libc.h>
 #include "service.h"
 
-void monitor(char *,int, int, int);
+void monitor(char*, char*, int, int);
 void publish(Service *, char *);
+void check(int, int);
 
 static void
 usage(void)
@@ -17,11 +18,11 @@ main(int argc, char *argv[])
 {
 	char *svcfs;
 	char *authdom;
-	int style, fd, pollrate;
+	int style, pollrate;
 
 	svcfs = nil;
-	authdom = nil;
 	style = 1;
+	authdom = "9front";
 	pollrate = 30;
 
 	ARGBEGIN{
@@ -44,66 +45,74 @@ main(int argc, char *argv[])
 
 	if(argc > 0)
 		usage();
-	if((fd = svcdial(svcfs, authdom)) < 0){
-		fprint(2, "Unable to dial svcfs: %r\n");
-		exits("error");
-	}
 
-	if(authdom != nil){
-		monitor(authdom, fd, style, pollrate);
-		exits(0);
-	}
-	monitor("9front", fd, style, pollrate);
+	monitor(svcfs, authdom, style, pollrate);
 	exits(0);
 
 }
 
 char *
-clean(char *addr)
+addr2hostname(char *addr)
 {
-	char *c;
 	if(strncmp(addr, "tcp!", 4) == 0)
-		addr += 4;
-	c = strchr(addr, '!');
-	if(c != nil)
-		*c='\0';
-	return addr ;
+		return addr+4;
+	return addr;
 }
 
 void
-monitor(char *authdom, int fd, int style, int rate)
+check(int fd, int style)
 {
-	Service *svc, *s;
 	char srv[MAXADDR];
-	int i;
+	char *host;
+	Service *svc, *s;
+	print("Checking for /srv updates\n");
+	svc = svcquery(fd, ".", nil, 0);
+	if(svc == nil){
+		fprint(2, "Error parsing service entries\n");
+		return;
+	}
+
+	for(s = svc; s; s = s->next){
+		host = addr2hostname(s->address);
+		switch(style){
+		case 1:
+			sprint(srv, "/srv/%s.%s.%s", s->name, host, s->authdom);
+			break;
+		case 2:
+			sprint(srv, "/srv/%s.%s.%s", s->authdom, host, s->name);
+			break;
+		}
+		switch(s->status){
+		case Sok:
+			publish(s, srv);
+			break;
+		case Sdown:
+			remove(srv);
+			break;
+		case Spersist:
+		case Sreg:
+		default:
+			//
+			break;
+		}
+	}
+	svcfree(svc);
+}
+
+void
+monitor(char *svcfs, char *authdom, int style, int rate)
+{
+	int i, fd;
 
 	for(;;){
+		if((fd = svcdial(svcfs, authdom)) < 0){
+			fprint(2, "Unable to dial svcfs: %r\n");
+			exits("error");
+		}
 		for(i=0; i < rate; i++)
 			sleep(1000);
-		svc = svcquery(fd, ".", nil, 0);
-		for(s = svc; s; s = s->next){
-			switch(style){
-			case 1:
-				sprint(srv, "/srv/%s.%s.%s", s->name, clean(s->address), authdom);
-				break;
-			case 2:
-				sprint(srv, "/srv/%s.%s.%s", authdom, clean(s->address), s->name);
-				break;
-			}
-			switch(s->status){
-			case Sok:
-				publish(s, srv);
-				break;
-			case Sdown:
-				remove(srv);
-				break;
-			case Spersist:
-			case Sreg:
-				// No-op
-				break;
-			}
-		}
-		svcfree(svc);
+		check(fd, style);
+		close(fd);
 	}
 }
 
@@ -112,23 +121,29 @@ publish(Service *s, char *srv)
 {
 	char buf[128];
 	int f, fd;
-	char *dest;
 
 	/* stat first and bail before we double dial/create */
-	if((f = open(srv, OREAD)) >= 0){
+	if((f = open(srv, OREAD)) > 0){
 		close(f);
 		return;
 	}
 	/* Dial */
-	dest = netmkaddr(s->address, 0, "9fs");
-	fd = dial(dest, 0, 0, 0);
+	fd = dial(s->address, 0, 0, 0);
 	if(fd < 0)
-		return;
+		goto Error;
 	f = create(srv, OWRITE, 0666);
 	if(f < 0)
-		return;
+		goto Error;
 	/* Publish fd from dial */
 	sprint(buf, "%d", fd);
 	write(f, buf, strlen(buf));
+	print("publish %s\n", srv);
 	close(f);
+	return;
+Error:
+	close(f);
+	if(fd >= 0)
+		close(fd);
+	fprint(2, "Unable to publish service: %r\n");
+	
 }
