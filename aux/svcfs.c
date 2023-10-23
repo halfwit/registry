@@ -258,7 +258,7 @@ Walk(Fid *f)
 					if(strcmp(name, qinfo[j]) == 0){
 						qtype = j;
 						break;
-					}
+					}	
 				if(j < max)
 					goto Accept;
 				goto Out;
@@ -547,7 +547,7 @@ Wstat(Fid *f)
 		return "Service already exists";
 	if(!removesvc(f->svc))
 		return "service already removed";
-	memset(f->svc->svc->name, 0, NAMELEN);
+	free(f->svc->svc->name);
 	memmove(f->svc->svc->name, d.name, NAMELEN);
 	insertsvc(f->svc);
 	writeservices();

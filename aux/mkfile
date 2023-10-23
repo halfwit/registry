@@ -1,0 +1,17 @@
+</$objtype/mkfile
+
+TARG=\
+	svcfs\
+
+HFILES=\
+	../service.h\
+
+BIN=/$objtype/bin/aux
+LIB=../lib.$O.a
+
+UPDATE=\
+	mkfile\
+	$HFILES\
+	${TARG:%.$O=%.c}\
+
+</sys/src/cmd/mkone
