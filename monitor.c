@@ -1,6 +1,6 @@
 #include <u.h>
 #include <libc.h>
-#include "libservice/service.h"
+#include "service.h"
 
 void monitor(char *,int, int, int);
 void publish(Service *, char *);
