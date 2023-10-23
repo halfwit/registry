@@ -4,24 +4,27 @@
 typedef struct Service Service;
 
 enum {
-    NAMELEN = 28,
-    NSVCS = 256,
-    MAXDESC = 256,
-    MAXADDR = 128,
+	NAMELEN = 28,
+	NSVCS = 256,
+	MAXDESC = 256,
+	MAXADDR = 128,
+	MAXAUTH = 128,
 	RS = 0x1e,
 };
 
 enum {
-	Sok = 1,
-	Sdown = 2,
-	Sreg =3 ,
-	Smax =4,
+	Sok,
+	Sdown,
+	Sreg,
+	Spersist,
+	Smax,
 };
 
 struct Service {
 	char name[NAMELEN];
 	char description[MAXDESC];
 	char address[MAXADDR];
+	char authdom[MAXAUTH];
 	uchar status;
 	vlong uptime;
 	Service *next; /* Used for queries */

@@ -23,13 +23,15 @@ Service *
 addService(Dir d)
 {
 	Service *svc;
-	char *desc, *addr, *stat, *up;
+	char *desc, *addr, *auth, *stat, *up;
 
 	svc = malloc(sizeof *svc);
 	memmove(svc->name, d.name, NAMELEN);
 	svc->name[strlen(d.name)] = '\0';
 	desc = readFile(d.name, "description", MAXDESC);
 	memmove(svc->description, desc, strlen(desc));
+	auth = readFile(d.name, "authdom", MAXAUTH);
+	memmove(svc->authdom, auth, strlen(auth));
 	addr = readFile(d.name, "address", MAXADDR);
 	memmove(svc->address, addr, strlen(addr));
 	svc->status = Sreg;

@@ -97,6 +97,7 @@ monitor(char *authdom, int fd, int style, int rate)
 			case Sdown:
 				remove(srv);
 				break;
+			case Spersist:
 			case Sreg:
 				// No-op
 				break;
@@ -113,8 +114,11 @@ publish(Service *s, char *srv)
 	int f, fd;
 	char *dest;
 
-	/* TODO: stat first and bail before we double dial/create */
-
+	/* stat first and bail before we double dial/create */
+	if((f = open(srv, OREAD)) >= 0){
+		close(f);
+		return;
+	}
 	/* Dial */
 	dest = netmkaddr(s->address, 0, "9fs");
 	fd = dial(dest, 0, 0, 0);

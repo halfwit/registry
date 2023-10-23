@@ -14,6 +14,8 @@ enum {
 	Qstatus,
 	Quptime,
 	Qdesc,
+	Qauth,
+	Qpersist,
 	Qmax,
 };
 
@@ -31,7 +33,6 @@ struct Entry {
 	int	ref;
 	vlong	uptime;
 	ulong	uniq;
-	uchar	persist;
 	Entry *link;
 };
 
@@ -41,26 +42,29 @@ char *qinfo[Qmax] = {
 	[Qaddr]		"address",
 	[Qstatus]	"status",
 	[Quptime]	"uptime",
+	[Qauth]		"authdom",
+	[Qpersist]	"persist",
 	[Qdesc]		"description",
 };
 
 char *status[Smax] = {
 	[Sok] 	= "ok",
 	[Sdown]	= "down",
+	[Spersist] = "persist",
 	[Sreg] = "registered",
 };
 
 Fid *fids;
 Entry *services[NSVCS];
 char	*svcfile;
-int		readonly;
+int	readonly;
 ulong	uniq;
 Fcall   rhdr, thdr;
 uchar	mdata[8192 + IOHDRSZ];
-int		messagesize = sizeof mdata;
+int	messagesize = sizeof mdata;
 
-Entry *findsvc(char*);
-Entry *installsvc(char*);
+Entry	*findsvc(char*);
+Entry	*installsvc(char*);
 void	insertsvc(Entry*);
 int	removesvc(Entry*);
 int	readservices(void);
@@ -324,10 +328,19 @@ Create(Fid *f)
 		return "create of unused fid";
 	if(readonly)
 		return "mounted readonly";
-	if(f->svc != nil)
-		return "permission denied";
 	name = rhdr.name;
 	perm = rhdr.perm;
+	if(f->svc != nil)
+		return "permission denied";
+	/* Allow creation of persist file */
+	if(strcmp(name, "persist") == 0){
+		f->svc->svc->status = Spersist;
+		f->qtype = Qpersist;
+		thdr.qid = mkqid(f->svc, f->qtype);
+		thdr.iounit = messagesize - IOHDRSZ;
+		writeservices();
+		return 0;
+	}
 	if(!(perm & DMDIR))
 		return "permission denied";
 	if(strcmp(name, "") == 0)
@@ -335,7 +348,7 @@ Create(Fid *f)
 	if(strlen(name) >= NAMELEN)
 		return "file name too long";
 	if(findsvc(name) != nil)
-		return "svc already exists";
+		return "Service already exists";
 	f->svc = installsvc(name);
 	f->svc->ref++;
 	f->qtype = Qsvc;
@@ -380,6 +393,8 @@ Read(Fid *f)
 		max -= Qsvc + 1;
 		j = 0;
 		for(i = 0; i < max; j += m, i++){
+			if(i + Qsvc + 1 == Qpersist)
+				continue;
 			m = dostat(f->svc, i + Qsvc + 1, data, n);
 			if( m <= BIT16SZ)
 				break;
@@ -410,6 +425,9 @@ Read(Fid *f)
 	case Qaddr:
 		sprint(data, "%s\n", f->svc->svc->address);
 		goto Readstr;
+	case Qauth:
+		sprint(data, "%s\n", f->svc->svc->authdom);
+		goto Readstr;
 	case Quptime:
 		sprint(data, "%lld\n", f->svc->svc->uptime);
 		goto Readstr;
@@ -435,18 +453,27 @@ Write(Fid *f)
 	data = rhdr.data;
 	switch(f->qtype) {
 	case Qaddr:
-		if(n > NAMELEN)
+		if(n > MAXADDR)
 			return "address too big!";
-		if(data[n-1] = '\n')
+		if(data[n-1] == '\n')
 			n--;
 		memmove(f->svc->svc->address, data, n);
 		f->svc->svc->address[n] = '\0';
 		thdr.count = n;
 		break;
+	case Qauth:
+		if(n > MAXAUTH)
+			return "address too big!";
+		if(data[n-1] == '\n')
+			n--;
+		memmove(f->svc->svc->authdom, data, n);
+		f->svc->svc->authdom[n] = '\0';
+		thdr.count = n;
+		break;
 	case Qdesc:
 		if(n > MAXDESC)
 			return "description too long";
-		if(data[n-1] = '\n')
+		if(data[n-1] == '\n')
 			n--;
 		memmove(f->svc->svc->description, data, n);
 		f->svc->svc->description[n] = '\0';
@@ -456,6 +483,7 @@ Write(Fid *f)
 	case Qsvc:
 	case Quptime:
 	case Qstatus:
+	case Qpersist:
 	default:
 		return "permission denied";
 	}
@@ -504,7 +532,7 @@ Wstat(Fid *f)
 	int n;
 	char buf[1024];
 
-	if(!f->busy || f->qtype != Qsvc)
+	if(!f->busy || f->qtype != Qsvc || f->qtype != Qpersist)
 		return "permission denied";
 	if(readonly)
 		return "mounted read-only";
@@ -516,10 +544,10 @@ Wstat(Fid *f)
 	if(n == 0 || n > NAMELEN)
 		return "bad service name";
 	if(findsvc(d.name))
-		return "service already exists";
+		return "Service already exists";
 	if(!removesvc(f->svc))
 		return "service already removed";
-	free(f->svc->svc->name);
+	memset(f->svc->svc->name, 0, NAMELEN);
 	memmove(f->svc->svc->name, d.name, NAMELEN);
 	insertsvc(f->svc);
 	writeservices();
@@ -551,7 +579,7 @@ dostat(Entry *e, ulong qtype, void *p, int n)
 		d.name = e->svc->name;
 	else
 		d.name = qinfo[qtype];
-	d.uid = d.gid = d.muid = "none"; // Maybe reggie or so
+	d.uid = d.gid = d.muid = "none";
 	d.qid = mkqid(e, qtype);
 	if(d.qid.type & QTDIR)
 		d.mode = 0777|DMDIR;
@@ -575,8 +603,8 @@ writeservices(void)
 		fprint(2, "attempted to write services to disk in a readonly system\n");
 		return;
 	}
-	
-	entrylen = NAMELEN + MAXADDR + MAXDESC;
+
+	entrylen = NAMELEN + MAXADDR + MAXAUTH + MAXDESC;
 	/* Count our services */
 	for(i = 0; i < NSVCS; i++)
 		for(e = services[i]; e != nil; e = e->link)
@@ -592,6 +620,8 @@ writeservices(void)
 			p += NAMELEN;
 			strncpy((char *)p, e->svc->address, MAXADDR);
 			p += MAXADDR;
+			strncpy((char *)p, e->svc->authdom, MAXAUTH);
+			p += MAXAUTH;
 			strncpy((char *)p, e->svc->description, MAXDESC);
 			p += MAXDESC;
 		}
@@ -694,15 +724,16 @@ readservices(void)
 		return 0;
 	}
 	ep = buf;
-	entrylen = NAMELEN + MAXDESC + MAXADDR;
+	entrylen = NAMELEN + MAXDESC + MAXADDR + MAXAUTH;
 	n = n / entrylen;
 	ns = 0;
 	for(i = 0; i < n; ep += entrylen, i++){
 		svc = findsvc((char *)ep);
 		if(svc == nil)
 			svc = installsvc((char *)ep);
-		memmove(svc->svc->address, scrub(ep + NAMELEN, MAXADDR), MAXADDR);
-		memmove(svc->svc->description, scrub(ep + NAMELEN + MAXADDR, MAXDESC), MAXDESC);
+		memmove(svc->svc->address, scrub(ep+NAMELEN, MAXADDR), MAXADDR);
+		memmove(svc->svc->authdom, scrub(ep+NAMELEN+MAXADDR, MAXAUTH), MAXAUTH);
+		memmove(svc->svc->description, scrub(ep+NAMELEN+MAXADDR+MAXAUTH, MAXDESC), MAXDESC);
 		ns++;
 	}
 	free(buf);
@@ -723,7 +754,8 @@ installsvc(char *name)
 	svc = emalloc(sizeof *svc);
 	memmove(svc->name, name, NAMELEN);
 	memmove(svc->description, "No description provided", MAXDESC);
-	memmove(svc->address, "none", 4);
+	memmove(svc->authdom, "9front", MAXAUTH);
+	memmove(svc->address, "none", MAXADDR);
 	svc->status = Sreg;
 	e->removed = 0;
 	e->ref = 0;
@@ -847,6 +879,8 @@ alive(Entry *svc)
 {
 	int fd;
 
+	if(svc->svc->status == Spersist)
+		return 2;
 	if(strcmp(svc->svc->address, "none") == 0)
 		return 2;
 	fd = dial(svc->svc->address, nil, nil, nil);
@@ -892,7 +926,7 @@ watch(void)
 					svc->svc->uptime += ((nsec() - start) / 1000000000LL);
 					break;
 				default:
-					/* Still in setup */
+					/* Still in setup or is persist, do not overwrite */
 					break;
 				}
 			}
@@ -930,4 +964,3 @@ error(char *s)
 	fprint(2, "svcfs: %s\n", s);
 	exits(s);
 }
-
