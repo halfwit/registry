@@ -1,7 +1,6 @@
 </$objtype/mkfile
 
-LIB=libservice.a$O
-
+LIB=../lib.$O.a
 OFILES=\
 	svcdial.$O\
 	svcquery.$O\
@@ -9,10 +8,12 @@ OFILES=\
 	svcfree.$O\
 
 HFILES=\
-	service.h
+	../service.h
 
-</sys/src/cmd/mklib
+UPDATE=\
+	mkfile\
+	$HFILES\
+	${OFILES:%.$O=%.c}\
 
-nuke:V:
-	mk clean
-	rm -f libservice.a$O
+</sys/src/cmd/mksyslib
+CFLAGS=$CFLAGS -I..
