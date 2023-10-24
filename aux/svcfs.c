@@ -2,7 +2,7 @@
 #include <libc.h>
 #include <ctype.h>
 #include <fcall.h>
-#include "libservice/service.h"
+#include "service.h"
 
 typedef struct Fid Fid;
 typedef struct Entry Entry;

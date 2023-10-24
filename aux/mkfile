@@ -1,10 +1,10 @@
 </$objtype/mkfile
 
-TARG=\
-	svcfs\
+TARG=svcfs
+OFILES=svcfs.$O\
 
 HFILES=\
-	../service.h\
+	service.h\
 
 BIN=/$objtype/bin/aux
 LIB=../lib.$O.a
@@ -12,6 +12,16 @@ LIB=../lib.$O.a
 UPDATE=\
 	mkfile\
 	$HFILES\
-	${TARG:%.$O=%.c}\
+	${OFILES:%.$O=%.c}\
 
 </sys/src/cmd/mkone
+
+$LIB:
+	cd ../libservice
+	mk
+
+$O.svcfs: svcfs.$O $LIB
+	$LD -o $target $prereq
+
+CFLAGS=$CFLAGS -I..
+
